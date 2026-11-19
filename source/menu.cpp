@@ -203,7 +203,8 @@ void Menu::drawHeader() {
     u32 bat = 0; psmGetBatteryChargePercentage(&bat);
     char right[48]; snprintf(right, sizeof right, "%s     %u%%", clock, bat);
     float w = ImGui::CalcTextSize(right).x;
-    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - w);
+    float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::SameLine(rightEdge - w);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetFontSize() * 0.45f);
     ImGui::TextColored(C_TEXT, "%s", right);
 }
@@ -272,8 +273,9 @@ void Menu::drawToast(float bottomY) {
 void Menu::drawLibrary() {
     if (!scanned_) { roms_ = paths::scanRoms(); scanned_ = true; }
     ImGui::PushFont(fontTitle_); ImGui::Text("Biblioteca"); ImGui::PopFont();
+    float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::TextColored(C_MUTED, "%zu juegos en %s", roms_.size(), paths::roms.c_str());
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize("Volver a escanear").x - 40 * scale_);
+    ImGui::SameLine(rightEdge - ImGui::CalcTextSize("Volver a escanear").x - 40 * scale_);
     if (ImGui::Button("Volver a escanear")) scanned_ = false;
 
     if (!paths::missingBios().empty()) {
@@ -380,9 +382,10 @@ void Menu::drawSettings() {
 
     // Fichas de categoría
     ImGui::Dummy(ImVec2(0, 2 * scale_));
+    float chipsEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     for (int i = 0; i < (int)cats.size(); i++) {
         if (i) ImGui::SameLine(0, 8 * scale_);
-        if (ImGui::GetCursorPosX() + ImGui::CalcTextSize(cats[i].c_str()).x + 40 * scale_ > ImGui::GetContentRegionMax().x)
+        if (i && ImGui::GetCursorPosX() + ImGui::CalcTextSize(cats[i].c_str()).x + 40 * scale_ > chipsEdge)
             ImGui::NewLine();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14 * scale_, 8 * scale_));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 30 * scale_);
