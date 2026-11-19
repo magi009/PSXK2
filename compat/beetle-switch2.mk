@@ -1,7 +1,8 @@
 # Plataforma Switch 2 (kaiHEN / libounce) para Beetle PSX HW — insertada por setup.sh
 else ifeq ($(platform), switch2)
    TARGET := $(TARGET_NAME)_libretro_switch2.a
-   STATIC_LINKING = 1
+   # STATIC_LINKING no: así el núcleo incluye su libretro-common. Empaquetamos con ar igualmente.
+   STATIC_LINKING_AR = 1
    fpic := -fPIE
    CC  ?= aarch64-none-elf-gcc
    CXX ?= aarch64-none-elf-g++

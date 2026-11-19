@@ -135,7 +135,7 @@ bool Video::init() {
         }
         LOGI("[video] Vulkan falló, usando OpenGL");
         vk_->shutdown(); delete vk_; vk_ = nullptr;
-        Config::get().setIndex("renderer", 1);   // hardware_gl
+        Config::get().setIndex("renderer", 1);   // software + salida OpenGL
     }
     s_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (!s_dpy || !eglInitialize(s_dpy, nullptr, nullptr)) { LOGI("[video] eglInitialize falló"); return false; }

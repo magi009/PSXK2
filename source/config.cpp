@@ -21,10 +21,10 @@ Config::Config() {
     defs_ = {
     // ---------------------------------------------------------------- VIDEO
     {"renderer", "Renderizador", C_VIDEO, "beetle_psx_hw_renderer",
-        {{"Vulkan 1.4 (recomendado)", "hardware_vk"}, {"OpenGL 4.3", "hardware_gl"}, {"Software (máxima precisión)", "software"}}, 0,
-        "Vulkan es el más rápido en Switch 2 y permite escalado interno, PGXP y MSAA. OpenGL ofrece todos los "
-        "escaladores por shader. Software es exacto pero a resolución nativa. Cambiar entre Vulkan y OpenGL "
-        "requiere reiniciar el emulador.", true},
+        {{"Vulkan 1.4 (recomendado)", "hardware_vk"}, {"Software + salida OpenGL", "software"}}, 0,
+        "Vulkan es el más rápido en Switch 2 y permite escalado interno, PGXP con perspectiva y MSAA. "
+        "Software es exacto pero a resolución nativa; la imagen se muestra con OpenGL y todos sus "
+        "escaladores (Sharp, Bicúbico, CRT). Cambiar de modo requiere reiniciar el emulador.", true},
     {"internal_res", "Resolución interna", C_VIDEO, "beetle_psx_hw_internal_resolution",
         {{"1x  nativa (320x240)", "1x(native)"}, {"2x  (640x480)", "2x"}, {"4x  (1280x960 ~1080p)", "4x"},
          {"8x  (2560x1920 ~4K)", "8x"}}, 2,

@@ -28,7 +28,8 @@ source "$DEVKITPRO/switch2vars.sh"
 
 mkdir -p third_party/lib third_party/imgui_backend
 
-# 1) Núcleo Beetle PSX HW (GPLv2): Vulkan + OpenGL, PGXP, escalado interno, CHD
+# 1) Núcleo Beetle PSX HW (GPLv2): renderer Vulkan + software, PGXP, escalado interno, CHD
+#    (su renderer OpenGL choca con los símbolos GL de OunceVK, así que se desactiva)
 if [ ! -d third_party/beetle-psx ]; then
   git clone --depth 1 https://github.com/libretro/beetle-psx-libretro.git third_party/beetle-psx
 fi
@@ -41,6 +42,9 @@ block = open("compat/beetle-switch2.mk").read()
 marker = "# Windows\nelse\n"
 assert marker in s, "no se encontró el bloque de Windows en el Makefile de Beetle"
 s = s.replace(marker, block + "\n" + marker, 1)
+rule = "$(TARGET): $(OBJECTS)\nifeq ($(STATIC_LINKING), 1)"
+assert rule in s, "no se encontró la regla de enlace de Beetle"
+s = s.replace(rule, "$(TARGET): $(OBJECTS)\nifneq (,$(filter 1,$(STATIC_LINKING) $(STATIC_LINKING_AR)))", 1)
 open(p, "w").write(s)
 PY
 fi
@@ -59,7 +63,7 @@ export CXXFLAGS="${CXXFLAGS:-} $EXTRA_INC"
 echo "EXTRA_INC=$EXTRA_INC"
 make -C third_party/beetle-psx clean >/dev/null 2>&1 || true
 make -C third_party/beetle-psx -j"$(nproc)" \
-     platform=switch2 HAVE_HW=1 HAVE_OPENGL=1 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0
+     platform=switch2 HAVE_HW=1 HAVE_OPENGL=0 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0
 cp third_party/beetle-psx/mednafen_psx_hw_libretro_switch2.a third_party/lib/libbeetlepsx.a
 
 # 2) Interfaz: Dear ImGui (MIT) con backends OpenGL3 y Vulkan
