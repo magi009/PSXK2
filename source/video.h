@@ -6,6 +6,7 @@
 class VkPresenter;
 struct ImDrawData;
 struct retro_hw_render_interface_vulkan;
+struct retro_hw_render_context_negotiation_interface_vulkan;
 
 // Backend de vídeo con dos caminos (se elige al arrancar con la opción "Renderizador"):
 //  - Vulkan 1.4 (OunceVK): el núcleo usa su renderer Vulkan; la salida se escala con blit.
@@ -37,6 +38,8 @@ public:
     bool isVulkan() const { return vk_ != nullptr; }
     retro_hw_render_interface_vulkan* vkInterface();
     void resetCoreImage();
+    void vkReleaseCoreDevice();
+    bool vkAdoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg);
 
     // ImGui (backend según API)
     bool imguiInit();

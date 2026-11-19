@@ -35,6 +35,9 @@ public:
     void imguiRender(ImDrawData* dd);
 
     void resetCore() { hasCoreImg_ = false; }
+    // Negociación libretro: el núcleo crea el VkDevice (Beetle lo exige) y lo adoptamos
+    bool adoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg);
+    void releaseCoreDevice();   // tras context_destroy: vuelve al dispositivo propio
     retro_hw_render_interface_vulkan* iface() { return &iface_; }
     int width() const { return extent_.width; }
     int height() const { return extent_.height; }
@@ -48,7 +51,12 @@ public:
     std::mutex queueLock;
 
 private:
-    bool createDevice();
+    bool createInstance();
+    bool createOwnDevice();
+    bool createDeviceObjects();
+    void destroyDeviceObjects();
+    void destroyDevice();
+    void fillIface();
     bool createSwapchain(bool vsync);
     void destroySwapchain();
     void transition(VkImage img, VkImageLayout from, VkImageLayout to,
@@ -64,6 +72,10 @@ private:
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;
     VkDevice dev_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
+    VkQueue presentQueue_ = VK_NULL_HANDLE;
+    const retro_hw_render_context_negotiation_interface_vulkan* coreNeg_ = nullptr;
+    bool vsync_ = true;
+    bool imguiDeferred_ = false;
     uint32_t qfam_ = 0;
     VkSwapchainKHR swap_ = VK_NULL_HANDLE;
     VkFormat format_ = VK_FORMAT_B8G8R8A8_UNORM;

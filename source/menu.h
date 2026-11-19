@@ -19,6 +19,11 @@ public:
     bool open = true;
     bool quit = false;
     bool screenshotRequested = false;
+    // Carga/cierre diferidos: se ejecutan al inicio del ciclo, nunca a mitad de un frame
+    std::string pendingRom;
+    bool pendingUnload = false;
+    void onGameLoaded(const std::string& rom);
+    void setError(const std::string& e) { error_ = e; }
 
 private:
     void feedInput();

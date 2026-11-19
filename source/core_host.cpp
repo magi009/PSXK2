@@ -7,6 +7,9 @@
 #include "video.h"
 #include <EGL/egl.h>
 #include <libretro.h>
+#define VK_USE_PLATFORM_VI_NN
+#include <vulkan/vulkan.h>
+#include <libretro_vulkan.h>
 #include <switch.h>
 #include <cstdarg>
 #include <cstdio>
@@ -29,6 +32,7 @@ static retro_pixel_format s_pixfmt = RETRO_PIXEL_FORMAT_0RGB1555;
 static retro_system_av_info s_av = {};
 static retro_disk_control_callback s_disk = {};
 static bool s_hasDisk = false;
+static const retro_hw_render_context_negotiation_interface_vulkan* s_negotiation = nullptr;
 static bool s_videoDone = false;
 static bool s_blockAudio = true;
 static std::map<std::string, std::string> s_coreDefaults;  // valores por defecto del núcleo
@@ -90,6 +94,19 @@ static bool RETRO_CALLCONV env_cb(unsigned cmd, void* data) {
         hw->get_proc_address = hw_get_proc;
         s_hw = *hw; s_hwActive = true;
         LOGI("[host] HW render %s %u.%u", vk ? "Vulkan" : "GL", hw->version_major, hw->version_minor);
+        return true;
+    }
+    case RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT: {
+        auto* n = (retro_hw_render_context_negotiation_interface*)data;
+        if (!s_video->isVulkan() || n->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN) return false;
+        n->interface_version = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION;   // v2
+        return true;
+    }
+    case RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE: {
+        auto* n = (const retro_hw_render_context_negotiation_interface_vulkan*)data;
+        if (!n || n->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN) return false;
+        s_negotiation = n;
+        LOGI("[host] interfaz de negociación Vulkan v%u recibida", n->interface_version);
         return true;
     }
     case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
@@ -203,7 +220,7 @@ bool CoreHost::loadGame(const std::string& path, std::string& error) {
     }
     stem_ = paths::stem(path); path_ = path;
     Config::get().loadGame(stem_);
-    s_hwActive = false; s_hw = {};
+    s_hwActive = false; s_hw = {}; s_negotiation = nullptr;
 
     retro_game_info gi = {};
     gi.path = path_.c_str();
@@ -219,7 +236,11 @@ bool CoreHost::loadGame(const std::string& path, std::string& error) {
     audio_.setInputRate(s_av.timing.sample_rate);
     if (s_hwActive) {
         video_.ensureCoreFbo(s_av.geometry.max_width, s_av.geometry.max_height);
+        // Vulkan: el núcleo crea su dispositivo durante la negociación, antes de context_reset
+        if (video_.isVulkan() && s_negotiation) video_.vkAdoptCoreDevice(s_negotiation);
+        else if (video_.isVulkan()) LOGI("[host] el núcleo no envió interfaz de negociación");
         if (s_hw.context_reset) s_hw.context_reset();
+        LOGI("[host] context_reset hecho");
     }
     applyControllers();
 
@@ -258,6 +279,7 @@ void CoreHost::unloadGame() {
     if (!loaded_) return;
     flushMemcard(true);
     if (s_hwActive && s_hw.context_destroy) s_hw.context_destroy();
+    video_.vkReleaseCoreDevice();          // destroy_device del núcleo + dispositivo propio para el menú
     retro_unload_game();
     Config::get().saveGame();
     Config::get().unloadGame();

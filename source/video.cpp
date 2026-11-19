@@ -340,6 +340,10 @@ void Video::clearScreen() {
 void Video::swap() { if (vk_) vk_->endFrame(); else eglSwapBuffers(s_dpy, s_surf); }
 void Video::beginFrame() { if (vk_) vk_->beginFrame(); }
 retro_hw_render_interface_vulkan* Video::vkInterface() { return vk_ ? vk_->iface() : nullptr; }
+void Video::vkReleaseCoreDevice() { if (vk_) vk_->releaseCoreDevice(); }
+bool Video::vkAdoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg) {
+    return vk_ && vk_->adoptCoreDevice(neg);
+}
 void Video::resetCoreImage() { if (vk_) vk_->resetCore(); last_ = LAST_NONE; }
 
 bool Video::imguiInit() { return vk_ ? vk_->imguiInit() : ImGui_ImplOpenGL3_Init("#version 330 core"); }

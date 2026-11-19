@@ -34,6 +34,14 @@ int main(int, char**) {
         input.update();
         if (input.quitRequested()) { LOGI("salida de emergencia (− + + 2 s)"); break; }
 
+        // Carga/cierre de juego fuera de cualquier frame (Vulkan puede cambiar de dispositivo)
+        if (menu.pendingUnload) { menu.pendingUnload = false; core.unloadGame(); }
+        if (!menu.pendingRom.empty()) {
+            std::string rom = menu.pendingRom, err;
+            menu.pendingRom.clear();
+            if (core.loadGame(rom, err)) menu.onGameLoaded(rom); else menu.setError(err);
+        }
+
         // Cambio portátil <-> dock o de opciones del frontend
         AppletOperationMode mode = appletGetOperationMode();
         if (mode != lastMode || cfg.consumeFrontendDirty()) { lastMode = mode; video.applyOutputMode(); }

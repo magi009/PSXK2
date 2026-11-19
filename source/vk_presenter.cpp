@@ -10,8 +10,8 @@
 
 // ------------------------------------------------------------------ callbacks libretro -> presenter
 static VkPresenter* P(void* h) { return (VkPresenter*)h; }
-static unsigned s_diagFrames = 0;      // se registran los primeros frames con detalle
-#define VKDIAG(...) do { if (s_diagFrames < 5) LOGI(__VA_ARGS__); } while (0)
+static unsigned s_diagLines = 0;       // registro detallado limitado (se reinicia al cargar juego)
+#define VKDIAG(...) do { if (s_diagLines < 40) { s_diagLines++; LOGI(__VA_ARGS__); } } while (0)
 static void RETRO_CALLCONV cb_set_image(void* h, const retro_vulkan_image* img, uint32_t n, const VkSemaphore* s, uint32_t) {
     P(h)->setImage(img, n, s);
 }
@@ -32,7 +32,7 @@ void VkPresenter::setImage(const retro_vulkan_image* img, uint32_t n, const VkSe
 void VkPresenter::setCommandBuffers(uint32_t n, const VkCommandBuffer* c) { coreCmds_.assign(c, c + n); }
 
 // ------------------------------------------------------------------ init
-bool VkPresenter::createDevice() {
+bool VkPresenter::createInstance() {
     // Instancia + superficie VI (VK_NN_vi_surface sobre la NWindow de libounce)
     const char* iext[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_NN_VI_SURFACE_EXTENSION_NAME};
     VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -67,6 +67,10 @@ bool VkPresenter::createDevice() {
     }
     if (!found) { LOGI("[vk] sin cola gráfica con presentación"); return false; }
 
+    return true;
+}
+
+bool VkPresenter::createOwnDevice() {
     // Se activan TODAS las funciones soportadas: el renderer de Beetle (parallel-psx)
     // necesita varias (storage images, sample rate shading, 16/8-bit storage...).
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -88,6 +92,11 @@ bool VkPresenter::createDevice() {
     VKCHECK(vkCreateDevice(gpu_, &dci, nullptr, &dev_));
     vkGetDeviceQueue(dev_, qfam_, 0, &queue_);
 
+    presentQueue_ = queue_;
+    return true;
+}
+
+bool VkPresenter::createDeviceObjects() {
     VkCommandPoolCreateInfo pci = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; pci.queueFamilyIndex = qfam_;
     VKCHECK(vkCreateCommandPool(dev_, &pci, nullptr, &pool_));
@@ -112,6 +121,11 @@ bool VkPresenter::createDevice() {
         vkMapMemory(dev_, stageMem_[i], 0, kStageSize, 0, &stageMap_[i]);
     }
 
+    fillIface();
+    return createSwapchain(vsync_) && imguiInit();
+}
+
+void VkPresenter::fillIface() {
     iface_.interface_type = RETRO_HW_RENDER_INTERFACE_VULKAN;
     iface_.interface_version = RETRO_HW_RENDER_INTERFACE_VULKAN_VERSION;
     iface_.handle = this;
@@ -127,7 +141,91 @@ bool VkPresenter::createDevice() {
     iface_.lock_queue = cb_lock;
     iface_.unlock_queue = cb_unlock;
     iface_.set_signal_semaphore = cb_signal;
-    return true;
+}
+
+// Libera todo lo que depende del VkDevice actual (no el dispositivo en sí)
+void VkPresenter::destroyDeviceObjects() {
+    if (!dev_) return;
+    vkDeviceWaitIdle(dev_);
+    imguiShutdown();
+    destroySwapchain();
+    for (uint32_t i = 0; i < kFrames; i++) {
+        vkDestroyFence(dev_, fence_[i], nullptr);
+        vkDestroySemaphore(dev_, acquired_[i], nullptr);
+        vkDestroyBuffer(dev_, stage_[i], nullptr);
+        vkFreeMemory(dev_, stageMem_[i], nullptr);
+        fence_[i] = VK_NULL_HANDLE; acquired_[i] = VK_NULL_HANDLE; stage_[i] = VK_NULL_HANDLE; stageMem_[i] = VK_NULL_HANDLE;
+    }
+    if (swImg_) { vkDestroyImage(dev_, swImg_, nullptr); vkFreeMemory(dev_, swMem_, nullptr); }
+    swImg_ = VK_NULL_HANDLE; swMem_ = VK_NULL_HANDLE; swFmt_ = VK_FORMAT_UNDEFINED; swLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (uiPass_) vkDestroyRenderPass(dev_, uiPass_, nullptr);
+    uiPass_ = VK_NULL_HANDLE;
+    vkDestroyCommandPool(dev_, pool_, nullptr);
+    pool_ = VK_NULL_HANDLE;
+    hasCoreImg_ = false; pendingGame_ = false; frame_ = 0; inFrame_ = false;
+}
+
+void VkPresenter::destroyDevice() {
+    if (!dev_) return;
+    // Si el dispositivo lo creó el núcleo, primero le dejamos liberar lo suyo
+    if (coreNeg_ && coreNeg_->destroy_device) coreNeg_->destroy_device();
+    coreNeg_ = nullptr;
+    vkDestroyDevice(dev_, nullptr);
+    dev_ = VK_NULL_HANDLE;
+}
+
+// create_device2: el núcleo arma su VkDeviceCreateInfo y nosotros lo creamos añadiendo VK_KHR_swapchain
+static VkDevice RETRO_CALLCONV wrapCreateDevice(VkPhysicalDevice gpu, void*, const VkDeviceCreateInfo* ci) {
+    VkDeviceCreateInfo info = *ci;
+    std::vector<const char*> exts(ci->ppEnabledExtensionNames, ci->ppEnabledExtensionNames + ci->enabledExtensionCount);
+    bool has = false;
+    for (auto* e : exts) if (!strcmp(e, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) has = true;
+    if (!has) exts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    info.enabledExtensionCount = (uint32_t)exts.size();
+    info.ppEnabledExtensionNames = exts.data();
+    for (auto* e : exts) LOGI("[vk]   extensión de dispositivo: %s", e);
+    VkDevice dev = VK_NULL_HANDLE;
+    VkResult r = vkCreateDevice(gpu, &info, nullptr, &dev);
+    LOGI("[vk] vkCreateDevice (pedido por el núcleo) = %d", r);
+    return r == VK_SUCCESS ? dev : VK_NULL_HANDLE;
+}
+
+void VkPresenter::releaseCoreDevice() {
+    if (!coreNeg_) return;
+    LOGI("[vk] liberando el dispositivo del núcleo");
+    destroyDeviceObjects();
+    destroyDevice();
+    createOwnDevice();
+    createDeviceObjects();
+}
+
+bool VkPresenter::adoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg) {
+    LOGI("[vk] negociación v%u: el núcleo crea el dispositivo", neg->interface_version);
+    destroyDeviceObjects();
+    destroyDevice();
+    retro_vulkan_context ctx = {};
+    bool ok = false;
+    if (neg->interface_version >= 2 && neg->create_device2)
+        ok = neg->create_device2(&ctx, inst_, gpu_, surf_, vkGetInstanceProcAddr, wrapCreateDevice, this);
+    else if (neg->create_device) {
+        static const char* ext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        static const VkPhysicalDeviceFeatures noFeatures = {};
+        ok = neg->create_device(&ctx, inst_, gpu_, surf_, vkGetInstanceProcAddr, ext, 1, nullptr, 0, &noFeatures);
+    }
+    if (!ok || !ctx.device) {
+        LOGI("[vk] el núcleo no pudo crear su dispositivo; se vuelve al propio (el juego no se verá)");
+        createOwnDevice();
+        createDeviceObjects();
+        return false;
+    }
+    coreNeg_ = neg;
+    dev_ = ctx.device; gpu_ = ctx.gpu ? ctx.gpu : gpu_;
+    queue_ = ctx.queue; qfam_ = ctx.queue_family_index;
+    presentQueue_ = ctx.presentation_queue ? ctx.presentation_queue : ctx.queue;
+    LOGI("[vk] dispositivo del núcleo listo: cola familia %u, presentación familia %u",
+         ctx.queue_family_index, ctx.presentation_queue_family_index);
+    s_diagLines = 0;
+    return createDeviceObjects();
 }
 
 uint32_t VkPresenter::memType(uint32_t bits, VkMemoryPropertyFlags props) {
@@ -218,10 +316,17 @@ void VkPresenter::destroySwapchain() {
 bool VkPresenter::init(int w, int h, bool vsync) {
     nwindowSetDimensions(nwindowGetDefault(), w, h);
     extent_ = {(uint32_t)w, (uint32_t)h};
-    return createDevice() && createSwapchain(vsync);
+    vsync_ = vsync;
+    // ImGui se inicializa aparte (Menu::init) la primera vez
+    if (!createInstance() || !createOwnDevice()) return false;
+    imguiDeferred_ = true;
+    bool ok = createDeviceObjects();
+    imguiDeferred_ = false;
+    return ok;
 }
 
 bool VkPresenter::resize(int w, int h, bool vsync) {
+    vsync_ = vsync;
     destroySwapchain();
     if (R_FAILED(nwindowSetDimensions(nwindowGetDefault(), w, h))) {
         LOGI("[vk] el sistema rechazó %dx%d, usando 1920x1080", w, h);
@@ -233,23 +338,12 @@ bool VkPresenter::resize(int w, int h, bool vsync) {
 }
 
 void VkPresenter::shutdown() {
-    if (!dev_) return;
-    vkDeviceWaitIdle(dev_);
-    imguiShutdown();
-    destroySwapchain();
-    for (uint32_t i = 0; i < kFrames; i++) {
-        vkDestroyFence(dev_, fence_[i], nullptr);
-        vkDestroySemaphore(dev_, acquired_[i], nullptr);
-        vkDestroyBuffer(dev_, stage_[i], nullptr);
-        vkFreeMemory(dev_, stageMem_[i], nullptr);
-    }
-    if (swImg_) { vkDestroyImage(dev_, swImg_, nullptr); vkFreeMemory(dev_, swMem_, nullptr); }
-    if (uiPass_) vkDestroyRenderPass(dev_, uiPass_, nullptr);
-    vkDestroyCommandPool(dev_, pool_, nullptr);
-    vkDestroyDevice(dev_, nullptr);
+    if (!inst_) return;
+    destroyDeviceObjects();
+    destroyDevice();
     vkDestroySurfaceKHR(inst_, surf_, nullptr);
     vkDestroyInstance(inst_, nullptr);
-    dev_ = VK_NULL_HANDLE;
+    inst_ = VK_NULL_HANDLE;
 }
 
 // ------------------------------------------------------------------ frame
@@ -418,17 +512,17 @@ void VkPresenter::endFrame() {
             VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
             pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &renderDone_[imageIdx_];
             pi.swapchainCount = 1; pi.pSwapchains = &swap_; pi.pImageIndices = &imageIdx_;
-            VkResult pr = vkQueuePresentKHR(queue_, &pi);
+            VkResult pr = vkQueuePresentKHR(presentQueue_, &pi);
             if (pr != VK_SUCCESS) { static unsigned n = 0; if (n++ < 10) LOGI("[vk] vkQueuePresentKHR = %d", pr); }
         }
     }
-    if (hasCoreImg_ || !coreCmds_.empty()) s_diagFrames++;
     frame_ = (frame_ + 1) % kFrames;
     inFrame_ = false;
 }
 
 // ------------------------------------------------------------------ ImGui
 bool VkPresenter::imguiInit() {
+    if (imguiDeferred_ || uiReady_) return true;
     for (int i = 0; i < 2; i++) {
         VkSamplerCreateInfo sci = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         sci.magFilter = sci.minFilter = i ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;

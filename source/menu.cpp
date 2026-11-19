@@ -47,6 +47,11 @@ void Menu::shutdown() {
     plExit();
 }
 
+void Menu::onGameLoaded(const std::string& rom) {
+    error_.clear(); open = false; tab_ = 1;
+    toast("Cargado: " + paths::stem(rom));
+}
+
 void Menu::toast(const std::string& msg) {
     toast_ = msg;
     toastUntil_ = armGetSystemTick() + armNsToTicks(2500000000ULL);
@@ -98,11 +103,7 @@ void Menu::drawLibrary() {
     if (roms_.empty()) ImGui::TextWrapped("Copia tus juegos (.cue/.bin, .chd, .pbp, .m3u) en la carpeta roms/.");
     for (auto& r : roms_) {
         std::string label = paths::stem(r) + "   " + paths::ext(r);
-        if (ImGui::Selectable(label.c_str())) {
-            std::string err;
-            if (core_.loadGame(r, err)) { error_.clear(); open = false; tab_ = 1; toast("Cargado: " + paths::stem(r)); }
-            else error_ = err;
-        }
+        if (ImGui::Selectable(label.c_str())) pendingRom = r;
     }
     ImGui::EndChild();
 }
@@ -136,7 +137,7 @@ void Menu::drawGame() {
         screenshotRequested = true;
     }
     if (ImGui::Button("Guardar memory card ahora", bw)) { core_.flushMemcard(true); toast("Memory card guardada"); }
-    if (ImGui::Button("Cerrar juego", bw)) { core_.unloadGame(); tab_ = 0; wantTab_ = 0; }
+    if (ImGui::Button("Cerrar juego", bw)) { pendingUnload = true; tab_ = 0; wantTab_ = 0; }
 }
 
 void Menu::drawSettings() {
