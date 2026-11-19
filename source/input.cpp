@@ -27,7 +27,9 @@ void Input::update() {
     }
     u64 h = padGetButtons(&pads_[0]);
     u64 d = padGetButtonsDown(&pads_[0]);
-    if (h != lastButtons_ && buttonLogs_ < 80) { buttonLogs_++; LOGI("[input] botones j1 = 0x%llx", (unsigned long long)h); lastButtons_ = h; }
+    // Se ignoran los bits de dirección de los sticks (0xFF0000), que llenaban el registro
+    u64 hb = h & ~0xFF0000ULL;
+    if (hb != lastButtons_ && buttonLogs_ < 300) { buttonLogs_++; LOGI("[input] botones j1 = 0x%llx", (unsigned long long)hb); lastButtons_ = hb; }
     probeRaw();
     hotkey_ = Hotkey::None;
     ff_ = false;
@@ -107,7 +109,10 @@ int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id
             case RETRO_DEVICE_ID_JOYPAD_L3:     m = HidNpadButton_StickL; break;
             case RETRO_DEVICE_ID_JOYPAD_R3:     m = HidNpadButton_StickR; break;
         }
-        return (b & m) ? 1 : 0;
+        int16_t r = (b & m) ? 1 : 0;
+        static unsigned coreLogs = 0;
+        if (r && coreLogs < 60) { coreLogs++; LOGI("[input] el núcleo lee puerto %u botón libretro %u = pulsado", port, id); }
+        return r;
     }
 
     if (base == RETRO_DEVICE_ANALOG && index <= RETRO_DEVICE_INDEX_ANALOG_RIGHT) {
