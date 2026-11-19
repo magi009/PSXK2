@@ -43,6 +43,7 @@ public:
     void imguiShutdown();
     void imguiNewFrame();
     void imguiRender(ImDrawData* dd);
+    void addGameLayer();          // Vulkan: añade la imagen del juego al fondo del frame de ImGui
 
     void setAspect(float coreAspect) { coreAspect_ = coreAspect; }
     bool screenshot(const std::string& path);

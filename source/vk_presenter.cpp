@@ -10,6 +10,8 @@
 
 // ------------------------------------------------------------------ callbacks libretro -> presenter
 static VkPresenter* P(void* h) { return (VkPresenter*)h; }
+static unsigned s_diagFrames = 0;      // se registran los primeros frames con detalle
+#define VKDIAG(...) do { if (s_diagFrames < 5) LOGI(__VA_ARGS__); } while (0)
 static void RETRO_CALLCONV cb_set_image(void* h, const retro_vulkan_image* img, uint32_t n, const VkSemaphore* s, uint32_t) {
     P(h)->setImage(img, n, s);
 }
@@ -24,6 +26,8 @@ static void RETRO_CALLCONV cb_signal(void* h, VkSemaphore s) { P(h)->setSignalSe
 void VkPresenter::setImage(const retro_vulkan_image* img, uint32_t n, const VkSemaphore* s) {
     coreImg_ = *img; hasCoreImg_ = true;
     coreWait_.assign(s, s + n);
+    VKDIAG("[vk] set_image: image=%p view=%p layout=%d formato=%d semáforos=%u",
+           (void*)img->create_info.image, (void*)img->image_view, img->image_layout, img->create_info.format, n);
 }
 void VkPresenter::setCommandBuffers(uint32_t n, const VkCommandBuffer* c) { coreCmds_.assign(c, c + n); }
 
@@ -263,6 +267,7 @@ void VkPresenter::beginFrame() {
     vkWaitForFences(dev_, 1, &fence_[frame_], VK_TRUE, UINT64_MAX);
     VkResult r = vkAcquireNextImageKHR(dev_, swap_, UINT64_MAX, acquired_[frame_], VK_NULL_HANDLE, &imageIdx_);
     acquiredOk_ = (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR);
+    if (!acquiredOk_) { static unsigned n = 0; if (n++ < 10) LOGI("[vk] vkAcquireNextImageKHR = %d", r); }
     vkResetFences(dev_, 1, &fence_[frame_]);
     vkResetCommandBuffer(cmd_[frame_], 0);
     VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -270,6 +275,7 @@ void VkPresenter::beginFrame() {
     vkBeginCommandBuffer(cmd_[frame_], &bi);
     swapLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
     coreCmds_.clear(); coreWait_.clear(); coreSignal_ = VK_NULL_HANDLE;
+    pendingGame_ = false;
     inFrame_ = true;
 }
 
@@ -304,12 +310,48 @@ void VkPresenter::blit(VkImage src, VkImageLayout srcLayout, unsigned w, unsigne
 }
 
 void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, int vh, bool linear) {
-    if (!hasCoreImg_) { clearTarget(); return; }
-    blit(coreImg_.create_info.image, coreImg_.image_layout, w, h, vx, vy, vw, vh, linear);
+    VKDIAG("[vk] presentCore %ux%u -> viewport %d,%d %dx%d (imagen del núcleo: %s)", w, h, vx, vy, vw, vh,
+           hasCoreImg_ ? "sí" : "NO");
+    clearTarget();
+    if (!hasCoreImg_ || !uiReady_) return;
+    // Descriptor (sampler + vista) cacheado por vista de imagen
+    VkImageView view = coreImg_.image_view;
+    VkImageLayout layout = coreImg_.image_layout;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    for (auto& e : texCache_)
+        if (e.view == view && e.linear == linear && e.layout == layout) set = e.set;
+    if (!set) {
+        if (texCache_.size() >= 24) {          // el núcleo recreó sus imágenes: limpiar
+            vkDeviceWaitIdle(dev_);
+            for (auto& e : texCache_) { ImGui_ImplVulkan_RemoveTexture(e.set); if (e.opaqueView) vkDestroyImageView(dev_, e.opaqueView, nullptr); }
+            texCache_.clear();
+        }
+        // Vista propia con alfa = 1: ImGui mezcla por alfa y el núcleo puede dejarlo en 0
+        VkImageViewCreateInfo vi = coreImg_.create_info;
+        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO; vi.pNext = nullptr;
+        vi.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                         VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_ONE};
+        VkImageView opaque = VK_NULL_HANDLE;
+        if (vkCreateImageView(dev_, &vi, nullptr, &opaque) != VK_SUCCESS) opaque = view;
+        set = ImGui_ImplVulkan_AddTexture(linear ? sampLinear_ : sampNearest_, opaque, layout);
+        texCache_.push_back({view, linear, layout, set, opaque == view ? VK_NULL_HANDLE : opaque});
+        LOGI("[vk] textura del núcleo registrada (vista %p, layout %d)", (void*)view, layout);
+    }
+    pendingGame_ = true; pendingSet_ = set;
+    pendingRect_[0] = (float)vx; pendingRect_[1] = (float)vy;
+    pendingRect_[2] = (float)(vx + vw); pendingRect_[3] = (float)(vy + vh);
+}
+
+void VkPresenter::addGameLayer() {
+    if (!pendingGame_) return;
+    // Se dibuja al fondo; el menú y el OSD quedan encima
+    ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)pendingSet_,
+        ImVec2(pendingRect_[0], pendingRect_[1]), ImVec2(pendingRect_[2], pendingRect_[3]));
 }
 
 void VkPresenter::presentSw(const void* data, unsigned w, unsigned h, size_t pitch, bool xrgb,
                             int vx, int vy, int vw, int vh, bool linear) {
+    VKDIAG("[vk] presentSw %ux%u pitch=%zu %s", w, h, pitch, xrgb ? "XRGB8888" : "RGB565");
     VkFormat fmt = xrgb ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R5G6B5_UNORM_PACK16;
     unsigned bpp = xrgb ? 4 : 2;
     if ((VkDeviceSize)pitch * h > kStageSize) return;
@@ -368,23 +410,36 @@ void VkPresenter::endFrame() {
     si.signalSemaphoreCount = (uint32_t)signal.size(); si.pSignalSemaphores = signal.data();
     {
         std::lock_guard<std::mutex> lk(queueLock);
-        vkQueueSubmit(queue_, 1, &si, fence_[frame_]);
+        VkResult sr = vkQueueSubmit(queue_, 1, &si, fence_[frame_]);
+        VKDIAG("[vk] frame: cmds núcleo=%zu esperas=%zu señales=%zu layout final=%d submit=%d",
+               coreCmds_.size(), wait.size(), signal.size(), swapLayout_, sr);
+        if (sr != VK_SUCCESS) { static unsigned n = 0; if (n++ < 10) LOGI("[vk] vkQueueSubmit = %d", sr); }
         if (acquiredOk_) {
             VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
             pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &renderDone_[imageIdx_];
             pi.swapchainCount = 1; pi.pSwapchains = &swap_; pi.pImageIndices = &imageIdx_;
-            vkQueuePresentKHR(queue_, &pi);
+            VkResult pr = vkQueuePresentKHR(queue_, &pi);
+            if (pr != VK_SUCCESS) { static unsigned n = 0; if (n++ < 10) LOGI("[vk] vkQueuePresentKHR = %d", pr); }
         }
     }
+    if (hasCoreImg_ || !coreCmds_.empty()) s_diagFrames++;
     frame_ = (frame_ + 1) % kFrames;
     inFrame_ = false;
 }
 
 // ------------------------------------------------------------------ ImGui
 bool VkPresenter::imguiInit() {
-    VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16};
+    for (int i = 0; i < 2; i++) {
+        VkSamplerCreateInfo sci = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sci.magFilter = sci.minFilter = i ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sci.addressModeU = sci.addressModeV = sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sci.maxLod = 0.f;
+        VKCHECK(vkCreateSampler(dev_, &sci, nullptr, i ? &sampLinear_ : &sampNearest_));
+    }
+    VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64};
     VkDescriptorPoolCreateInfo dpi = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; dpi.maxSets = 16;
+    dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; dpi.maxSets = 64;
     dpi.poolSizeCount = 1; dpi.pPoolSizes = &ps;
     VKCHECK(vkCreateDescriptorPool(dev_, &dpi, nullptr, &uiPool_));
     ImGui_ImplVulkan_InitInfo ii = {};
@@ -399,8 +454,12 @@ bool VkPresenter::imguiInit() {
 void VkPresenter::imguiShutdown() {
     if (!uiReady_) return;
     vkDeviceWaitIdle(dev_);
+    for (auto& e : texCache_) { ImGui_ImplVulkan_RemoveTexture(e.set); if (e.opaqueView) vkDestroyImageView(dev_, e.opaqueView, nullptr); }
+    texCache_.clear();
     ImGui_ImplVulkan_Shutdown();
     vkDestroyDescriptorPool(dev_, uiPool_, nullptr);
+    vkDestroySampler(dev_, sampNearest_, nullptr);
+    vkDestroySampler(dev_, sampLinear_, nullptr);
     uiReady_ = false;
 }
 
@@ -408,6 +467,7 @@ void VkPresenter::imguiNewFrame() { ImGui_ImplVulkan_NewFrame(); }
 
 void VkPresenter::imguiRender(ImDrawData* dd) {
     if (!acquiredOk_ || !inFrame_) return;
+    VKDIAG("[vk] imguiRender: listas=%d vértices=%d juego=%s", dd->CmdListsCount, dd->TotalVtxCount, pendingGame_ ? "sí" : "no");
     if (swapLayout_ == VK_IMAGE_LAYOUT_UNDEFINED) clearTarget();
     transition(images_[imageIdx_], swapLayout_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,

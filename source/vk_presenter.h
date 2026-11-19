@@ -26,6 +26,9 @@ public:
     void presentSw(const void* data, unsigned w, unsigned h, size_t pitch, bool xrgb8888,
                    int vx, int vy, int vw, int vh, bool linear);
 
+    // Dibuja la imagen del núcleo como textura (vía ImGui) en el frame actual
+    void addGameLayer();
+
     bool imguiInit();
     void imguiShutdown();
     void imguiNewFrame();
@@ -87,6 +90,14 @@ private:
     std::vector<VkSemaphore> coreWait_;
     std::vector<VkCommandBuffer> coreCmds_;
     VkSemaphore coreSignal_ = VK_NULL_HANDLE;
+
+    // Imagen del núcleo como textura (muestreo, no blit: el núcleo solo garantiza uso SAMPLED)
+    VkSampler sampNearest_ = VK_NULL_HANDLE, sampLinear_ = VK_NULL_HANDLE;
+    struct TexEntry { VkImageView view; bool linear; VkImageLayout layout; VkDescriptorSet set; VkImageView opaqueView; };
+    std::vector<TexEntry> texCache_;
+    bool pendingGame_ = false;
+    VkDescriptorSet pendingSet_ = VK_NULL_HANDLE;
+    float pendingRect_[4] = {};
 
     // Frames por software
     VkBuffer stage_[kFrames] = {};

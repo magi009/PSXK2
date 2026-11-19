@@ -219,6 +219,7 @@ void Menu::draw() {
     feedInput();
     video_.imguiNewFrame();
     ImGui::NewFrame();
+    video_.addGameLayer();
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 sz(io.DisplaySize.x * 0.86f, io.DisplaySize.y * 0.86f);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.07f, io.DisplaySize.y * 0.07f));
@@ -253,12 +254,14 @@ void Menu::draw() {
 void Menu::drawOsd() {
     bool fps = Config::get().isOn("show_fps");
     bool t = !toast_.empty() && armGetSystemTick() < toastUntil_;
-    if (!fps && !t) return;
+    if (!fps && !t && !video_.isVulkan()) return;   // en Vulkan el juego se dibuja con este mismo pase
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2((float)video_.screenW(), (float)video_.screenH());
     io.DeltaTime = 1.f / 60.f;
     video_.imguiNewFrame();
     ImGui::NewFrame();
+    video_.addGameLayer();
+    if (fps || t) {
     ImGui::SetNextWindowPos(ImVec2(12, 12));
     ImGui::SetNextWindowBgAlpha(0.5f);
     ImGui::Begin("osd", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
@@ -266,6 +269,7 @@ void Menu::drawOsd() {
     if (fps) ImGui::Text("%.1f FPS", core_.fps());
     if (t) ImGui::TextUnformatted(toast_.c_str());
     ImGui::End();
+    }
     ImGui::Render();
     video_.imguiRender(ImGui::GetDrawData());
 }

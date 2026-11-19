@@ -148,6 +148,8 @@ static bool RETRO_CALLCONV env_cb(unsigned cmd, void* data) {
 
 static void RETRO_CALLCONV video_cb(const void* data, unsigned w, unsigned h, size_t pitch) {
     s_videoDone = true;
+    static unsigned n = 0;
+    if (n < 5) { n++; LOGI("[host] video_cb %ux%u %s", w, h, !data ? "duplicado" : data == RETRO_HW_FRAME_BUFFER_VALID ? "HW (Vulkan)" : "software"); }
     if (!data) { s_video->redrawLast(); return; }                    // frame duplicado
     if (data == RETRO_HW_FRAME_BUFFER_VALID) s_video->presentHw(w, h);
     else s_video->presentSw(data, w, h, pitch, s_pixfmt == RETRO_PIXEL_FORMAT_XRGB8888);

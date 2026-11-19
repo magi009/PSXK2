@@ -345,6 +345,7 @@ void Video::resetCoreImage() { if (vk_) vk_->resetCore(); last_ = LAST_NONE; }
 bool Video::imguiInit() { return vk_ ? vk_->imguiInit() : ImGui_ImplOpenGL3_Init("#version 330 core"); }
 void Video::imguiShutdown() { if (vk_) vk_->imguiShutdown(); else ImGui_ImplOpenGL3_Shutdown(); }
 void Video::imguiNewFrame() { if (vk_) vk_->imguiNewFrame(); else ImGui_ImplOpenGL3_NewFrame(); }
+void Video::addGameLayer() { if (vk_) vk_->addGameLayer(); }
 void Video::imguiRender(ImDrawData* dd) {
     if (vk_) vk_->imguiRender(dd); else ImGui_ImplOpenGL3_RenderDrawData(dd);
 }
