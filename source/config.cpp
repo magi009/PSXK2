@@ -125,10 +125,12 @@ Config::Config() {
         {{"Cada 5 s si cambia", "5"}, {"Cada 30 s si cambia", "30"}, {"Solo al salir", "0"}}, 0, "", false},
 
     // ---------------------------------------------------------------- CONTROLES
-    {"pad1", "Mando jugador 1", C_INPUT, nullptr,
-        {{"DualShock (analógico)", "dualshock"}, {"Mando digital", "digital"}}, 0, "", true},
-    {"pad2", "Mando jugador 2", C_INPUT, nullptr,
-        {{"DualShock (analógico)", "dualshock"}, {"Mando digital", "digital"}, {"Ninguno", "none"}}, 0, "", true},
+    {"pad1_type", "Mando jugador 1", C_INPUT, nullptr,
+        {{"Mando digital (todos los juegos)", "digital"}, {"DualShock (analógico)", "dualshock"}}, 0,
+        "Digital funciona con todos los juegos. DualShock añade sticks y vibración, pero algunos juegos "
+        "antiguos (p. ej. Castlevania SOTN) ignoran el mando si está en modo analógico.", true},
+    {"pad2_type", "Mando jugador 2", C_INPUT, nullptr,
+        {{"Mando digital", "digital"}, {"DualShock (analógico)", "dualshock"}, {"Ninguno", "none"}}, 0, "", true},
     {"analog_toggle", "Botón ANALOG (L3+R3+Start)", C_INPUT, "beetle_psx_hw_analog_toggle", OFFON, 0, "", false},
     {"rumble", "Vibración", C_INPUT, nullptr, ONOFF, 0, "", false},
     {"face_layout", "Distribución de botones", C_INPUT, nullptr,

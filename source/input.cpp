@@ -33,8 +33,11 @@ void Input::update() {
     probeRaw();
     hotkey_ = Hotkey::None;
     ff_ = false;
+    bool combo = (h & HidNpadButton_Minus) && (h & HidNpadButton_Plus);
+    if (combo && !prevCombo_) hotkey_ = Hotkey::Menu;   // − y + juntos, en cualquier orden
+    prevCombo_ = combo;
     if (h & HidNpadButton_Minus) {
-        if (d & HidNpadButton_Plus) hotkey_ = Hotkey::Menu;
+        if (hotkey_ == Hotkey::Menu) {}
         else if (d & HidNpadButton_R) hotkey_ = Hotkey::SaveState;
         else if (d & HidNpadButton_L) hotkey_ = Hotkey::LoadState;
         else if (d & HidNpadButton_Y) hotkey_ = Hotkey::Screenshot;

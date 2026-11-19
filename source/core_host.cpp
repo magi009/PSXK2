@@ -18,8 +18,9 @@
 #include <ctime>
 #include <map>
 
-// Tipos de mando del núcleo Beetle PSX
-#define PSX_DEV_DUALSHOCK RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 0)
+// Tipos de mando del núcleo Beetle PSX (input.h del núcleo)
+#define PSX_DEV_DIGITAL   RETRO_DEVICE_JOYPAD                            // "PlayStation Controller"
+#define PSX_DEV_DUALSHOCK RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 1)  // DualShock (SCPH-1200)
 
 // ------------------------------------------------------------------ estado global (callbacks C)
 static CoreHost* s_host;
@@ -205,8 +206,8 @@ void CoreHost::deinit() { unloadGame(); retro_deinit(); }
 
 void CoreHost::applyControllers() {
     for (unsigned p = 0; p < 2; p++) {
-        const char* t = Config::get().value(p == 0 ? "pad1" : "pad2");
-        unsigned dev = !strcmp(t, "dualshock") ? PSX_DEV_DUALSHOCK : !strcmp(t, "digital") ? RETRO_DEVICE_JOYPAD : RETRO_DEVICE_NONE;
+        const char* t = Config::get().value(p == 0 ? "pad1_type" : "pad2_type");
+        unsigned dev = !strcmp(t, "dualshock") ? PSX_DEV_DUALSHOCK : !strcmp(t, "digital") ? PSX_DEV_DIGITAL : RETRO_DEVICE_NONE;
         retro_set_controller_port_device(p, dev);
     }
 }

@@ -30,6 +30,7 @@ private:
     bool ff_ = false;
     bool minusCombo_ = false;
     bool quit_ = false;
+    bool prevCombo_ = false;
     u64 comboStart_ = 0;
     u32 lastStyle_[2] = {0xFFFFFFFF, 0xFFFFFFFF};
     u64 lastButtons_ = ~0ULL;

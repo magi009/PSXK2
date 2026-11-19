@@ -48,9 +48,10 @@ int main(int, char**) {
         if (mode != lastMode || cfg.consumeFrontendDirty()) { lastMode = mode; video.applyOutputMode(); }
         video.beginFrame();
 
-        if (core.loaded() && !menu.open) {
+        // El atajo del menú se procesa UNA vez por frame (antes se abría y cerraba en el mismo frame)
+        if (input.hotkey() == Hotkey::Menu && core.loaded()) menu.open = !menu.open;
+        else if (core.loaded() && !menu.open) {
             switch (input.hotkey()) {
-            case Hotkey::Menu: menu.open = true; break;
             case Hotkey::SaveState: menu.toast(core.saveState(cfg.index("state_slot")) ? "Estado guardado" : "Error al guardar"); break;
             case Hotkey::LoadState: menu.toast(core.loadState(cfg.index("state_slot")) ? "Estado cargado" : "Ranura vacía"); break;
             case Hotkey::Screenshot: shotPending = true; break;
@@ -76,7 +77,6 @@ int main(int, char**) {
         } else {
             if (core.loaded()) video.redrawLast(); else video.clearScreen();
             menu.draw();
-            if (input.hotkey() == Hotkey::Menu && core.loaded()) menu.open = false;
         }
         video.swap();
         beatFrames++;
