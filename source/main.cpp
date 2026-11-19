@@ -19,6 +19,22 @@ int main(int, char**) {
     logx::init((paths::logs + "/psx-k2.log").c_str());
     LOGI("PSX-K2 iniciando");
 
+    // Reparto de núcleos de CPU: los hilos que crea el núcleo (GPU, texturas, portadas) nacen con
+    // menor prioridad y prefieren el núcleo por defecto del proceso. Si el hilo principal (emulación,
+    // siempre ocupado) se queda ahí, el hilo de GPU no consigue CPU y todo va a pocos fps.
+    // Por eso el hilo principal se mueve a otro núcleo y deja libre el de por defecto.
+    {
+        u64 mask = 0;
+        svcGetInfo(&mask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0);
+        int cur = svcGetCurrentProcessorNumber();
+        int target = -1;
+        for (int c = 1; c < 8 && target < 0; c++) if ((mask & (1ULL << c)) && c != cur) target = c;
+        if (target >= 0 && R_SUCCEEDED(svcSetThreadCoreMask(CUR_THREAD_HANDLE, target, (u32)(1u << target))))
+            LOGI("[cpu] núcleos disponibles 0x%llx; hilo principal: núcleo %d -> %d", (unsigned long long)mask, cur, target);
+        else
+            LOGI("[cpu] núcleos disponibles 0x%llx; hilo principal se queda en el núcleo %d", (unsigned long long)mask, cur);
+    }
+
     Config& cfg = Config::get();
     cfg.loadGlobal();
 

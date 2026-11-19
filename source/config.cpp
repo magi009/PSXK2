@@ -112,6 +112,14 @@ Config::Config() {
         "Acelera el coprocesador geométrico: menos ralentización en escenas 3D cargadas.", false},
     {"gpu_oc", "Overclock de rasterizador GPU", C_CPU, "beetle_psx_hw_gpu_overclock",
         {{"1x (nativo)", "1x(native)"}, {"2x", "2x"}, {"4x", "4x"}}, 0, "", false},
+    {"gpu_thread", "Hilo de GPU", C_CPU, "beetle_psx_hw_gpu_thread",
+        {{"Activado (recomendado)", "enabled"}, {"Desactivado", "disabled"}}, 0,
+        "Emula la GPU de la PlayStation en un hilo aparte, en otro núcleo de la CPU de la Switch 2. "
+        "Desactívalo solo si un juego da problemas gráficos raros.", true},
+    {"software_fb", "Framebuffer por software", C_CPU, "beetle_psx_hw_renderer_software_fb",
+        {{"Activado (máxima compatibilidad)", "enabled"}, {"Desactivado (más rápido)", "disabled"}}, 0,
+        "Necesario para algunos efectos (desenfoques, transiciones, capturas del propio juego). "
+        "Desactivarlo ahorra CPU; si ves efectos rotos, vuelve a activarlo.", true},
     {"audio_sync", "Sincronización", C_CPU, nullptr,
         {{"Automática (VSync + audio dinámico)", "enabled"}, {"Sin sincronizar (pruebas)", "disabled"}}, 0,
         "Automática: la imagen va al ritmo de la pantalla (60 Hz) y el audio se ajusta solo un 0,5% para que no "
