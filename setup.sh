@@ -66,6 +66,14 @@ make -C third_party/beetle-psx -j"$(nproc)" \
      platform=switch2 HAVE_HW=1 HAVE_OPENGL=0 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0
 cp third_party/beetle-psx/mednafen_psx_hw_libretro_switch2.a third_party/lib/libbeetlepsx.a
 
+# El núcleo declara punteros globales vkXxx (los rellena con get_instance_proc_addr del frontend)
+# con los mismos nombres que las funciones reales de OunceVK (-lvulkan) que usa el frontend.
+# Se renombran solo dentro del núcleo a rhi_vkXxx para que no choquen al enlazar.
+aarch64-none-elf-nm third_party/beetle-psx/rhi/rhi_lib_vulkan.o \
+  | awk '$2 ~ /^[BbDdCcSs]$/ && $3 ~ /^vk[A-Z]/ { print $3 " rhi_" $3 }' | sort -u > third_party/vk-rename.txt
+echo "símbolos Vulkan renombrados en el núcleo: $(wc -l < third_party/vk-rename.txt)"
+aarch64-none-elf-objcopy --redefine-syms=third_party/vk-rename.txt third_party/lib/libbeetlepsx.a
+
 # 2) Interfaz: Dear ImGui (MIT) con backends OpenGL3 y Vulkan
 if [ ! -d third_party/imgui ]; then
   git clone --depth 1 --branch v1.91.5 https://github.com/ocornut/imgui.git third_party/imgui
