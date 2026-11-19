@@ -2,6 +2,8 @@
 #include "audio.h"
 #include "config.h"
 #include "core_host.h"
+#include "covers.h"
+#include "net.h"
 #include "input.h"
 #include "log.h"
 #include "menu.h"
@@ -28,6 +30,8 @@ int main(int, char**) {
     core.init();
     Menu menu(video, input, core);
     menu.init();
+    net::init();
+    covers::init(video);
 
     AppletOperationMode lastMode = appletGetOperationMode();
     bool shotPending = false;
@@ -41,6 +45,7 @@ int main(int, char**) {
 
         // Carga/cierre de juego fuera de cualquier frame (Vulkan puede cambiar de dispositivo)
         if (menu.pendingUnload) { menu.pendingUnload = false; core.unloadGame(); }
+        if (menu.pendingReset) { menu.pendingReset = false; core.reset(); }
         if (!menu.pendingRom.empty()) {
             std::string rom = menu.pendingRom, err;
             menu.pendingRom.clear();
@@ -108,15 +113,17 @@ int main(int, char**) {
         video.swap();
         beatFrames++;
         if (armTicksToNs(armGetSystemTick() - beatTick) >= 5000000000ULL) {
-            LOGI("[main] vivo: %u ciclos en 5 s, juego %s, menú %s", beatFrames,
-                 core.loaded() ? "sí" : "no", menu.open ? "abierto" : "cerrado");
+            LOGI("[main] vivo: %u ciclos en 5 s, juego %s (%.1f fps), menú %s", beatFrames,
+                 core.loaded() ? "sí" : "no", core.fps(), menu.open ? "abierto" : "cerrado");
             beatTick = armGetSystemTick(); beatFrames = 0;
         }
     }
 
     cfg.saveGlobal();
+    covers::shutdown();
     core.deinit();
     menu.shutdown();
+    net::shutdown();
     audio.shutdown();
     video.shutdown();
     LOGI("PSX-K2 cerrado");

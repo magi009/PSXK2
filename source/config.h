@@ -14,7 +14,10 @@ struct OptionDef {
     int defIndex;
     const char* help;
     bool needsRestart;     // requiere reiniciar el juego
+    unsigned flags = 0;    // OPT_*: con qué renderer funciona
 };
+
+enum : unsigned { OPT_VULKAN_ONLY = 1, OPT_HW_ONLY = 2 };
 
 enum class Scope { Global, Game };
 
@@ -30,6 +33,8 @@ public:
     void loadGame(const std::string& gameStem);   // aplica overrides por juego
     void saveGame();
     void clearGame();
+    // ¿La opción tiene efecto con el renderer actual? (las que no, se ocultan en el menú)
+    bool appliesToRenderer(const OptionDef& d) const;
     // Restaura a valores por defecto (en el ámbito que se está editando). nullptr = todas las categorías
     void resetCategory(const char* category);                              // borra overrides del juego actual
     void unloadGame();
@@ -58,4 +63,6 @@ private:
     std::map<std::string, int> global_, game_;
     std::string gameStem_;
     bool coreDirty_ = true, feDirty_ = true;
+    bool applyingPreset_ = false;
+    void applyPreset(int idx);
 };

@@ -147,6 +147,7 @@ void VkPresenter::fillIface() {
 void VkPresenter::destroyDeviceObjects() {
     if (!dev_) return;
     vkDeviceWaitIdle(dev_);
+    destroyUserTextures();
     imguiShutdown();
     destroySwapchain();
     for (uint32_t i = 0; i < kFrames; i++) {
@@ -432,7 +433,102 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
     pendingRect_[2] = (float)(vx + vw); pendingRect_[3] = (float)(vy + vh);
 }
 
+uint64_t VkPresenter::createTexture(const uint8_t* rgba, int w, int h) {
+    if (!uiReady_ || !dev_ || w <= 0 || h <= 0) return 0;
+    VkDeviceSize size = (VkDeviceSize)w * h * 4;
+    UserTex t = {};
+    VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM; ii.extent = {(uint32_t)w, (uint32_t)h, 1};
+    ii.mipLevels = 1; ii.arrayLayers = 1; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ii.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (vkCreateImage(dev_, &ii, nullptr, &t.img) != VK_SUCCESS) return 0;
+    VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev_, t.img, &mr);
+    VkMemoryAllocateInfo mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    mai.allocationSize = mr.size; mai.memoryTypeIndex = memType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(dev_, &mai, nullptr, &t.mem);
+    vkBindImageMemory(dev_, t.img, t.mem, 0);
+
+    // Buffer temporal de subida
+    VkBuffer sb; VkDeviceMemory sm;
+    VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bci.size = size; bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    vkCreateBuffer(dev_, &bci, nullptr, &sb);
+    VkMemoryRequirements br; vkGetBufferMemoryRequirements(dev_, sb, &br);
+    mai.allocationSize = br.size;
+    mai.memoryTypeIndex = memType(br.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    vkAllocateMemory(dev_, &mai, nullptr, &sm);
+    vkBindBufferMemory(dev_, sb, sm, 0);
+    void* map; vkMapMemory(dev_, sm, 0, size, 0, &map); memcpy(map, rgba, size); vkUnmapMemory(dev_, sm);
+
+    VkCommandBufferAllocateInfo cai = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cai.commandPool = pool_; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; cai.commandBufferCount = 1;
+    VkCommandBuffer cb; vkAllocateCommandBuffers(dev_, &cai, &cb);
+    VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cb, &bi);
+    VkImageMemoryBarrier b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = t.img; b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    VkBufferImageCopy c = {};
+    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.imageExtent = {(uint32_t)w, (uint32_t)h, 1};
+    vkCmdCopyBufferToImage(cb, sb, t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    vkEndCommandBuffer(cb);
+    VkFenceCreateInfo fci = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkFence f; vkCreateFence(dev_, &fci, nullptr, &f);
+    VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1; si.pCommandBuffers = &cb;
+    { std::lock_guard<std::mutex> lk(queueLock); vkQueueSubmit(queue_, 1, &si, f); }
+    vkWaitForFences(dev_, 1, &f, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(dev_, f, nullptr);
+    vkFreeCommandBuffers(dev_, pool_, 1, &cb);
+    vkDestroyBuffer(dev_, sb, nullptr); vkFreeMemory(dev_, sm, nullptr);
+
+    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = t.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCreateImageView(dev_, &vi, nullptr, &t.view);
+    t.set = ImGui_ImplVulkan_AddTexture(sampLinear_, t.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    userTex_.push_back(t);
+    return (uint64_t)t.set;
+}
+
+void VkPresenter::destroyTexture(uint64_t id) {
+    for (size_t i = 0; i < userTex_.size(); i++)
+        if ((uint64_t)userTex_[i].set == id) {
+            userTex_[i].freeAt = frameCount_ + kFrames + 2;   // cuando ningún frame en vuelo la use
+            userTexGrave_.push_back(userTex_[i]);
+            userTex_.erase(userTex_.begin() + i);
+            return;
+        }
+}
+
+void VkPresenter::destroyUserTextures() {
+    auto kill = [&](UserTex& t) {
+        if (uiReady_) ImGui_ImplVulkan_RemoveTexture(t.set);
+        vkDestroyImageView(dev_, t.view, nullptr); vkDestroyImage(dev_, t.img, nullptr); vkFreeMemory(dev_, t.mem, nullptr);
+    };
+    for (auto& t : userTex_) kill(t);
+    for (auto& t : userTexGrave_) kill(t);
+    userTex_.clear(); userTexGrave_.clear();
+    gen_++;
+}
+
 void VkPresenter::collectTextures() {
+    for (size_t i = 0; i < userTexGrave_.size();) {
+        if (frameCount_ >= userTexGrave_[i].freeAt) {
+            UserTex& t = userTexGrave_[i];
+            ImGui_ImplVulkan_RemoveTexture(t.set);
+            vkDestroyImageView(dev_, t.view, nullptr); vkDestroyImage(dev_, t.img, nullptr); vkFreeMemory(dev_, t.mem, nullptr);
+            userTexGrave_.erase(userTexGrave_.begin() + i);
+        } else i++;
+    }
     // Entradas sin usar desde hace 3 s pasan al "cementerio"; se destruyen cuando ningún
     // frame en vuelo puede estar usándolas (sin vkDeviceWaitIdle: el núcleo usa la GPU en paralelo)
     for (size_t i = 0; i < texCache_.size();) {

@@ -29,6 +29,11 @@ public:
     // Dibuja la imagen del núcleo como textura (vía ImGui) en el frame actual
     void addGameLayer();
 
+    // Texturas para la interfaz (portadas). Devuelve el ImTextureID (0 = error).
+    uint64_t createTexture(const uint8_t* rgba, int w, int h);
+    void destroyTexture(uint64_t id);
+    unsigned generation() const { return gen_; }   // cambia cuando se recrea el dispositivo
+
     bool imguiInit();
     void imguiShutdown();
     void imguiNewFrame();
@@ -113,6 +118,11 @@ private:
     bool pendingGame_ = false;
     VkDescriptorSet pendingSet_ = VK_NULL_HANDLE;
     float pendingRect_[4] = {};
+
+    struct UserTex { VkImage img; VkDeviceMemory mem; VkImageView view; VkDescriptorSet set; uint64_t freeAt; };
+    std::vector<UserTex> userTex_, userTexGrave_;
+    unsigned gen_ = 1;
+    void destroyUserTextures();
 
     // Frames por software
     VkBuffer stage_[kFrames] = {};

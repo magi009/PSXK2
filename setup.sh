@@ -82,4 +82,9 @@ for f in imgui_impl_opengl3.h imgui_impl_opengl3.cpp imgui_impl_opengl3_loader.h
   cp third_party/imgui/backends/$f third_party/imgui_backend/
 done
 
+# 3) stb_image (dominio público) para decodificar portadas PNG/JPG
+if [ ! -d third_party/stb ]; then
+  git clone --depth 1 https://github.com/nothings/stb.git third_party/stb
+fi
+
 echo "Listo. Ahora ejecuta: make dist"

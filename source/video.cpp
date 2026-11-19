@@ -350,6 +350,24 @@ void Video::resetCoreImage() { if (vk_) vk_->resetCore(); last_ = LAST_NONE; }
 bool Video::imguiInit() { return vk_ ? vk_->imguiInit() : ImGui_ImplOpenGL3_Init("#version 330 core"); }
 void Video::imguiShutdown() { if (vk_) vk_->imguiShutdown(); else ImGui_ImplOpenGL3_Shutdown(); }
 void Video::imguiNewFrame() { if (vk_) vk_->imguiNewFrame(); else ImGui_ImplOpenGL3_NewFrame(); }
+uint64_t Video::createTexture(const uint8_t* rgba, int w, int h) {
+    if (vk_) return vk_->createTexture(rgba, w, h);
+    GLuint t; glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0); glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return t;
+}
+void Video::destroyTexture(uint64_t id) {
+    if (vk_) { vk_->destroyTexture(id); return; }
+    GLuint t = (GLuint)id; glDeleteTextures(1, &t);
+}
+unsigned Video::textureGeneration() const { return vk_ ? vk_->generation() : 1; }
+
 void Video::addGameLayer() { if (vk_) vk_->addGameLayer(); }
 void Video::imguiRender(ImDrawData* dd) {
     if (vk_) vk_->imguiRender(dd); else ImGui_ImplOpenGL3_RenderDrawData(dd);

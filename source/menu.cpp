@@ -1,6 +1,8 @@
 #include "menu.h"
 #include "config.h"
 #include "core_host.h"
+#include "covers.h"
+#include "net.h"
 #include "input.h"
 #include "log.h"
 #include "paths.h"
@@ -47,7 +49,7 @@ bool Menu::init() {
     io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-    io.ConfigNavCursorVisibleAlways = true;
+    io.ConfigNavCursorVisibleAlways = false;   // sin recuadro: el foco se ve con el color del elemento
     io.KeyRepeatDelay = 0.28f;      // desplazamiento fluido al mantener la cruceta
     io.KeyRepeatRate = 0.065f;
 
@@ -90,7 +92,7 @@ void Menu::applyStyle() {
     st.FramePadding = ImVec2(18, 12);
     st.ItemSpacing = ImVec2(14, 10);
     st.ItemInnerSpacing = ImVec2(10, 8);
-    st.ScrollbarSize = 10;
+    st.ScrollbarSize = 16;
     st.WindowRounding = 18; st.ChildRounding = 14; st.FrameRounding = 12; st.PopupRounding = 16;
     st.GrabRounding = 10; st.ScrollbarRounding = 10;
     st.WindowBorderSize = 0; st.ChildBorderSize = 0; st.PopupBorderSize = 0; st.FrameBorderSize = 0;
@@ -106,7 +108,7 @@ void Menu::applyStyle() {
     c[ImGuiCol_Header] = ImVec4(C_ACCENT.x, C_ACCENT.y, C_ACCENT.z, 0.30f);
     c[ImGuiCol_HeaderHovered] = ImVec4(C_ACCENT.x, C_ACCENT.y, C_ACCENT.z, 0.40f);
     c[ImGuiCol_HeaderActive] = ImVec4(C_ACCENT.x, C_ACCENT.y, C_ACCENT.z, 0.60f);
-    c[ImGuiCol_NavCursor] = C_ACCENT2;
+    c[ImGuiCol_NavCursor] = ImVec4(0, 0, 0, 0);   // sin recuadro azul/verde
     c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_ScrollbarGrab] = ImVec4(1, 1, 1, 0.15f);
     c[ImGuiCol_Separator] = ImVec4(1, 1, 1, 0.07f);
@@ -131,6 +133,26 @@ void Menu::toast(const std::string& msg) {
     toastUntil_ = toastStart_ + armNsToTicks(2800000000ULL);
 }
 
+// Lo que antes se consultaba cada frame (stat() en la microSD, IPC de batería) ahora se refresca
+// solo cada cierto tiempo o cuando cambia algo: eran la causa de los tirones del menú.
+void Menu::refreshStatus(bool force) {
+    u64 now = armGetSystemTick();
+    if (force || armTicksToNs(now - lastStatus_) > 3000000000ULL) {
+        lastStatus_ = now;
+        biosMissing_ = !paths::missingBios().empty();
+        for (int i = 0; i < 10; i++) stateExists_[i] = core_.loaded() && core_.stateExists(i);
+        bool on = net::online();
+        if (on && !wasOnline_) covers::retryMissing();
+        wasOnline_ = on;
+    }
+    if (force || armTicksToNs(now - lastBattery_) > 30000000000ULL || !lastBattery_) {
+        lastBattery_ = now;
+        u32 b = 0; if (R_SUCCEEDED(psmGetBatteryChargePercentage(&b))) battery_ = b;
+    }
+    time_t t = time(nullptr);
+    strftime(clock_, sizeof clock_, "%H:%M", localtime(&t));
+}
+
 // ------------------------------------------------------------------ entrada del mando -> ImGui
 void Menu::feedInput() {
     ImGuiIO& io = ImGui::GetIO();
@@ -150,16 +172,40 @@ void Menu::feedInput() {
     key(ImGuiKey_GamepadFaceRight, HidNpadButton_B);   // volver
     key(ImGuiKey_GamepadFaceUp, HidNpadButton_X);
 
+    // Táctil: un toque es un clic; si el dedo se mueve más de 14 px es un arrastre (desplaza la lista
+    // y NO pulsa nada); mantener 0,6 s sin moverse abre las opciones del juego.
     HidTouchScreenState ts = {};
-    if (hidGetTouchScreenStates(&ts, 1) && ts.count > 0) {
-        io.AddMousePosEvent(ts.touches[0].x * io.DisplaySize.x / 1280.f, ts.touches[0].y * io.DisplaySize.y / 720.f);
+    bool down = hidGetTouchScreenStates(&ts, 1) && ts.count > 0;
+    float tx = down ? ts.touches[0].x * io.DisplaySize.x / 1280.f : touchX_;
+    float ty = down ? ts.touches[0].y * io.DisplaySize.y / 720.f : touchY_;
+    io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+    if (down && !touchDown_) {                       // empieza el toque
+        startX_ = tx; startY_ = ty; touchDragging_ = false; holdTime_ = 0; longFired_ = false; cancelClick_ = false;
+        scrollVel_ = 0; scrollClaim_ = nextClaim_ = 0;
+    }
+    dragDY_ = down && touchDown_ ? ty - touchY_ : 0;
+    if (down) {
+        holdTime_ += io.DeltaTime;
+        if (!touchDragging_ && (fabsf(tx - startX_) > 14 * scale_ || fabsf(ty - startY_) > 14 * scale_)) {
+            touchDragging_ = true; cancelClick_ = true;
+        }
+    }
+    touchX_ = tx; touchY_ = ty;
+    if (cancelClick_) {
+        // Se aparta el puntero antes de soltar: así ImGui no cuenta el arrastre como pulsación
+        io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+        io.AddMouseButtonEvent(0, false);
+    } else if (down) {
+        io.AddMousePosEvent(tx, ty);
         io.AddMouseButtonEvent(0, true);
     } else {
         io.AddMouseButtonEvent(0, false);
+        if (touchDown_) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);   // sin "hover" pegado tras soltar
     }
+    touchDown_ = down;
 
     u64 d = input_.down();
-    if (!confirmOpen_) {
+    if (!confirmOpen_ && !gameOptsOpen_) {
         if (d & HidNpadButton_R) wantTab_ = (tab_ + 1) % 4;
         if (d & HidNpadButton_L) wantTab_ = (tab_ + 3) % 4;
     }
@@ -174,6 +220,26 @@ static bool BigButton(const char* label, ImVec4 color, float w, float h) {
     bool r = ImGui::Button(label, ImVec2(w, h));
     ImGui::PopStyleColor(3);
     return r;
+}
+
+// Arrastre con el dedo en la ventana actual. Si hay ventanas anidadas, se queda con la más interna
+// que tenga contenido desplazable. Al soltar sigue un poco por inercia.
+void Menu::touchScroll() {
+    ImGuiIO& io = ImGui::GetIO();
+    unsigned id = ImGui::GetID("##touchscroll");
+    ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+    bool inside = startX_ >= wp.x && startX_ < wp.x + ws.x && startY_ >= wp.y && startY_ < wp.y + ws.y;
+    if (touchDragging_ && inside && ImGui::GetScrollMaxY() > 0 && scrollClaim_ == 0) nextClaim_ = id;
+    if (id != scrollClaim_) return;
+    if (touchDown_ && touchDragging_) {
+        ImGui::SetScrollY(ImGui::GetScrollY() - dragDY_);
+        if (io.DeltaTime > 0) scrollVel_ = scrollVel_ * 0.6f + (-dragDY_ / io.DeltaTime) * 0.4f;
+    } else if (fabsf(scrollVel_) > 20.f) {
+        ImGui::SetScrollY(ImGui::GetScrollY() + scrollVel_ * io.DeltaTime);
+        scrollVel_ *= powf(0.04f, io.DeltaTime);      // frenado suave
+    } else {
+        scrollVel_ = 0;
+    }
 }
 
 // Tarjeta (fondo redondeado) alrededor de un bloque
@@ -198,10 +264,8 @@ void Menu::drawHeader() {
         ImGui::SetCursorPosY(y);
     }
     // Hora y batería a la derecha
-    time_t t = time(nullptr);
-    char clock[16]; strftime(clock, sizeof clock, "%H:%M", localtime(&t));
-    u32 bat = 0; psmGetBatteryChargePercentage(&bat);
-    char right[48]; snprintf(right, sizeof right, "%s     %u%%", clock, bat);
+    char right[64];
+    snprintf(right, sizeof right, "%s%s     %u%%", wasOnline_ ? "\u25CF En línea     " : "", clock_, battery_);
     float w = ImGui::CalcTextSize(right).x;
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::SameLine(rightEdge - w);
@@ -245,6 +309,7 @@ void Menu::drawSidebar(float w) {
 
 void Menu::drawFooter() {
     std::string hints = G_A " Aceptar     " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
+    if (tab_ == 0) hints += "     " G_X " Opciones (o mantén pulsado)";
     if (tab_ == 2) hints += "     " G_ZL " " G_ZR " Categoría     ◀ ▶ Cambiar";
     hints += "     " G_L " " G_R " Secciones";
     if (core_.loaded()) hints += "     " G_MINUS " + " G_PLUS " Menú";
@@ -271,47 +336,176 @@ void Menu::drawToast(float bottomY) {
 
 // ------------------------------------------------------------------ secciones
 void Menu::drawLibrary() {
-    if (!scanned_) { roms_ = paths::scanRoms(); scanned_ = true; }
+    if (!scanned_) { roms_ = paths::scanRoms(); scanned_ = true; refreshStatus(true); }
+    Config& cfg = Config::get();
+    bool grid = !strcmp(cfg.value("library_view"), "grid");
     ImGui::PushFont(fontTitle_); ImGui::Text("Biblioteca"); ImGui::PopFont();
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-    ImGui::TextColored(C_MUTED, "%zu juegos en %s", roms_.size(), paths::roms.c_str());
-    ImGui::SameLine(rightEdge - ImGui::CalcTextSize("Volver a escanear").x - 40 * scale_);
-    if (ImGui::Button("Volver a escanear")) scanned_ = false;
+    ImGui::TextColored(C_MUTED, "%zu juegos", roms_.size());
+    std::string cm = covers::lastMessage();
+    if (!cm.empty()) { ImGui::SameLine(); ImGui::TextColored(C_MUTED, "·  %s", cm.c_str()); }
+    const char* viewLbl = grid ? "Ver en lista" : "Ver portadas";
+    float bw1 = ImGui::CalcTextSize(viewLbl).x + 36 * scale_, bw2 = ImGui::CalcTextSize("Actualizar").x + 36 * scale_;
+    ImGui::SameLine(rightEdge - bw1 - bw2 - 12 * scale_);
+    if (ImGui::Button(viewLbl)) cfg.setIndex("library_view", grid ? 1 : 0);
+    ImGui::SameLine();
+    if (ImGui::Button("Actualizar")) { scanned_ = false; covers::retryMissing(); }
 
-    if (!paths::missingBios().empty()) {
-        ImGui::TextColored(C_WARN, "Falta la BIOS: copia scph5501.bin (USA), scph5500.bin (JAP) o scph5502.bin (EUR) en bios/");
+    if (biosMissing_) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.08f, 1));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * scale_, 12 * scale_));
+        ImGui::BeginChild("bios", ImVec2(0, ImGui::GetFontSize() * 3.4f), ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::TextColored(C_WARN, "Falta la BIOS de PlayStation");
+        ImGui::TextWrapped("Copia scph5501.bin (USA), scph5500.bin (Japón) o scph5502.bin (Europa) en %s", paths::bios.c_str());
+        ImGui::EndChild(); ImGui::PopStyleVar(); ImGui::PopStyleColor();
     }
     if (!error_.empty()) ImGui::TextColored(C_DANGER, "%s", error_.c_str());
     ImGui::Dummy(ImVec2(0, 4 * scale_));
 
-    ImGui::BeginChild("roms");
+    ImGui::BeginChild("roms", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollWithMouse);
+    touchScroll();
     if (roms_.empty()) {
-        ImGui::TextWrapped("No hay juegos todavía. Copia tus juegos (.chd, .cue/.bin, .pbp, .m3u) en la carpeta roms/ "
-                           "de la microSD y pulsa \"Volver a escanear\".");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextColored(C_TEXT, "Todavía no hay juegos.");
+        ImGui::TextColored(C_MUTED, "1. Conecta la microSD al PC.\n2. Copia tus juegos (.chd, .cue + .bin, .pbp o .m3u) en %s\n"
+                                    "3. Vuelve aquí y toca \"Actualizar\".", paths::roms.c_str());
+        ImGui::PopTextWrapPos();
     }
-    float rowH = ImGui::GetFontSize() * 2.6f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+    u64 d = input_.down();
+    int cols = grid ? 5 : 1;
+    float gap = 18 * scale_;
+    float availW = ImGui::GetContentRegionAvail().x;
+    float cardW = grid ? (availW - gap * (cols - 1)) / cols : availW;
+    float coverH = grid ? cardW : ImGui::GetFontSize() * 2.6f;
+    float cardH = grid ? coverH + ImGui::GetFontSize() * 2.7f : coverH;
     for (size_t i = 0; i < roms_.size(); i++) {
         const std::string& r = roms_[i];
-        ImGui::PushID((int)i);
-        ImVec2 p = ImGui::GetCursorScreenPos();
-        float w = ImGui::GetContentRegionAvail().x;
-        if (ImGui::Selectable("##rom", false, 0, ImVec2(w, rowH))) pendingRom = r;
-        bool focused = ImGui::IsItemFocused() || ImGui::IsItemHovered();
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), col(focused ? C_PANEL2 : C_PANEL), 12 * scale_);
-        // Insignia con el formato
-        std::string ext = paths::ext(r).substr(1);
-        for (auto& ch : ext) ch = (char)toupper(ch);
-        ImVec2 es = ImGui::CalcTextSize(ext.c_str());
-        float bx = p.x + 18 * scale_, by = p.y + (rowH - es.y) * 0.5f;
-        dl->AddRectFilled(ImVec2(bx - 8 * scale_, by - 4 * scale_), ImVec2(bx + es.x + 8 * scale_, by + es.y + 4 * scale_),
-                          col(focused ? C_ACCENT : ImVec4(0.25f, 0.27f, 0.36f, 1)), 8 * scale_);
-        dl->AddText(ImVec2(bx, by), col(C_TEXT), ext.c_str());
         std::string name = paths::stem(r);
-        dl->AddText(ImVec2(bx + es.x + 30 * scale_, p.y + (rowH - ImGui::GetFontSize()) * 0.5f), col(C_TEXT), name.c_str());
+        ImGui::PushID((int)i);
+        if (grid && i % cols) ImGui::SameLine(0, gap);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        bool clicked = ImGui::Selectable("##rom", false, 0, ImVec2(cardW, cardH));
+        bool hovered = ImGui::IsItemHovered();
+        bool focused = (ImGui::IsItemFocused() && io.NavVisible) || hovered;
+        bool visible = ImGui::IsRectVisible(p, ImVec2(p.x + cardW, p.y + cardH));
+        // Mantener pulsado (táctil) o X (mando) = opciones del juego
+        if (hovered && touchDown_ && !touchDragging_ && holdTime_ > 0.6f && !longFired_) {
+            longFired_ = true; cancelClick_ = true; gameOptsOpen_ = true; gameOptsRom_ = r;
+        }
+        if (ImGui::IsItemFocused() && (d & HidNpadButton_X)) { gameOptsOpen_ = true; gameOptsRom_ = r; }
+        if (clicked && !longFired_) pendingRom = r;
+        if (visible) {
+            std::string ext = paths::ext(r).substr(1);
+            for (auto& ch : ext) ch = (char)toupper(ch);
+            float rad = 14 * scale_;
+            if (grid) {
+                ImVec2 c0 = p, c1(p.x + cardW, p.y + coverH);
+                float asp = 1.f;
+                covers::State st;
+                uint64_t tex = covers::get(name, &asp, &st);
+                if (focused) dl->AddRectFilled(ImVec2(p.x - 6 * scale_, p.y - 6 * scale_), ImVec2(p.x + cardW + 6 * scale_, p.y + cardH),
+                                               col(C_ACCENT, 0.35f), rad + 4 * scale_);
+                if (tex) {
+                    // Encaja la portada en el cuadro sin deformarla
+                    float bw = cardW, bh = coverH;
+                    if (asp > 1.f) bh = cardW / asp; else bw = coverH * asp;
+                    ImVec2 i0(p.x + (cardW - bw) * 0.5f, p.y + (coverH - bh) * 0.5f);
+                    dl->AddRectFilled(c0, c1, col(ImVec4(0.06f, 0.07f, 0.10f, 1)), rad);
+                    dl->AddImageRounded((ImTextureID)(uintptr_t)tex, i0, ImVec2(i0.x + bw, i0.y + bh), ImVec2(0, 0), ImVec2(1, 1),
+                                        IM_COL32_WHITE, rad);
+                } else {
+                    // Portada provisional: degradado con la inicial del juego
+                    dl->AddRectFilledMultiColor(c0, c1, col(ImVec4(0.22f, 0.20f, 0.42f, 1)), col(ImVec4(0.12f, 0.30f, 0.42f, 1)),
+                                                col(ImVec4(0.08f, 0.10f, 0.18f, 1)), col(ImVec4(0.14f, 0.12f, 0.26f, 1)));
+                    char ini[2] = {name.empty() ? '?' : (char)toupper(name[0]), 0};
+                    ImGui::PushFont(fontTitle_);
+                    ImVec2 isz = ImGui::CalcTextSize(ini);
+                    dl->AddText(fontTitle_, fontTitle_->FontSize * 1.6f, ImVec2(p.x + (cardW - isz.x * 1.6f) * 0.5f, p.y + (coverH - isz.y * 1.6f) * 0.45f),
+                                col(C_TEXT, 0.85f), ini);
+                    ImGui::PopFont();
+                    if (st == covers::State::Loading)
+                        dl->AddText(ImVec2(p.x + 12 * scale_, p.y + coverH - ImGui::GetFontSize() - 10 * scale_), col(C_MUTED), "Buscando portada...");
+                }
+                // Insignia de formato
+                ImVec2 es = ImGui::CalcTextSize(ext.c_str());
+                ImVec2 b0(p.x + 10 * scale_, p.y + 10 * scale_);
+                dl->AddRectFilled(b0, ImVec2(b0.x + es.x + 16 * scale_, b0.y + es.y + 6 * scale_), col(ImVec4(0, 0, 0, 0.6f)), 8 * scale_);
+                dl->AddText(ImVec2(b0.x + 8 * scale_, b0.y + 3 * scale_), col(C_TEXT), ext.c_str());
+                // Título (2 líneas como máximo)
+                ImGui::PushClipRect(ImVec2(p.x, p.y + coverH), ImVec2(p.x + cardW, p.y + cardH), true);
+                dl->AddText(nullptr, 0.f, ImVec2(p.x + 4 * scale_, p.y + coverH + 8 * scale_), col(focused ? C_TEXT : ImVec4(0.80f, 0.83f, 0.90f, 1)),
+                            name.c_str(), nullptr, cardW - 8 * scale_);
+                ImGui::PopClipRect();
+            } else {
+                dl->AddRectFilled(p, ImVec2(p.x + cardW, p.y + cardH), col(focused ? C_PANEL2 : C_PANEL), 12 * scale_);
+                float asp = 1.f;
+                uint64_t tex = covers::get(name, &asp);
+                float th = cardH - 12 * scale_, tw = th;
+                ImVec2 t0(p.x + 8 * scale_, p.y + 6 * scale_);
+                if (tex) dl->AddImageRounded((ImTextureID)(uintptr_t)tex, t0, ImVec2(t0.x + tw, t0.y + th), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8 * scale_);
+                else dl->AddRectFilled(t0, ImVec2(t0.x + tw, t0.y + th), col(ImVec4(0.20f, 0.20f, 0.36f, 1)), 8 * scale_);
+                ImVec2 es = ImGui::CalcTextSize(ext.c_str());
+                float bx = t0.x + tw + 18 * scale_, by = p.y + (cardH - es.y) * 0.5f;
+                dl->AddRectFilled(ImVec2(bx - 8 * scale_, by - 4 * scale_), ImVec2(bx + es.x + 8 * scale_, by + es.y + 4 * scale_),
+                                  col(focused ? C_ACCENT : ImVec4(0.25f, 0.27f, 0.36f, 1)), 8 * scale_);
+                dl->AddText(ImVec2(bx, by), col(C_TEXT), ext.c_str());
+                dl->AddText(ImVec2(bx + es.x + 30 * scale_, p.y + (cardH - ImGui::GetFontSize()) * 0.5f), col(C_TEXT), name.c_str());
+            }
+        }
         ImGui::PopID();
     }
+    ImGui::Dummy(ImVec2(0, 20 * scale_));
     ImGui::EndChild();
+}
+
+void Menu::drawGameOptions() {
+    if (gameOptsOpen_ && !ImGui::IsPopupOpen("gameopts")) ImGui::OpenPopup("gameopts");
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), 0, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.52f, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(30 * scale_, 26 * scale_));
+    if (ImGui::BeginPopupModal("gameopts", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
+        std::string name = paths::stem(gameOptsRom_);
+        float asp = 1.f;
+        uint64_t tex = covers::get(name, &asp);
+        float ch = ImGui::GetFontSize() * 7.f;
+        if (tex) { ImGui::Image((ImTextureID)(uintptr_t)tex, ImVec2(ch * asp, ch)); ImGui::SameLine(); }
+        ImGui::BeginGroup();
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+        ImGui::PushFont(fontTitle_); ImGui::TextWrapped("%s", name.c_str()); ImGui::PopFont();
+        ImGui::TextColored(C_MUTED, "%s", paths::ext(gameOptsRom_).c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndGroup();
+        ImGui::Dummy(ImVec2(0, 6 * scale_));
+        float W = ImGui::GetContentRegionAvail().x, gap = ImGui::GetStyle().ItemSpacing.x;
+        float third = (W - 2 * gap) / 3.f, bh = ImGui::GetFontSize() * 2.2f;
+        bool close = (input_.down() & HidNpadButton_B) != 0;
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        if (BigButton("Jugar", C_ACCENT, W, bh * 1.1f)) { pendingRom = gameOptsRom_; close = true; }
+        ImGui::Dummy(ImVec2(0, 4 * scale_));
+        bool online = wasOnline_;
+        ImGui::TextColored(C_ACCENT2, "Cambiar portada");
+        ImGui::SameLine(); ImGui::TextColored(C_MUTED, online ? "(se descarga de internet)" : "(sin internet)");
+        ImGui::BeginDisabled(!online);
+        if (BigButton("Caja", C_PANEL2, third, bh)) { covers::replace(name, covers::Kind::Box); toast("Descargando portada (caja)..."); }
+        ImGui::SameLine();
+        if (BigButton("Pantalla de título", C_PANEL2, third, bh)) { covers::replace(name, covers::Kind::Title); toast("Descargando pantalla de título..."); }
+        ImGui::SameLine();
+        if (BigButton("Captura", C_PANEL2, third, bh)) { covers::replace(name, covers::Kind::Snap); toast("Descargando captura..."); }
+        ImGui::EndDisabled();
+        if (BigButton("Quitar portada", C_PANEL, W, bh)) { covers::remove(name); toast("Portada quitada"); }
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextColored(C_MUTED, "Para usar tu propia imagen, copia desde el PC un archivo .png o .jpg llamado \"%s\" en %s",
+                           name.c_str(), covers::folder().c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0, 4 * scale_));
+        if (BigButton("Cerrar", C_PANEL2, W, bh)) close = true;
+        if (close) { gameOptsOpen_ = false; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar();
 }
 
 void Menu::drawGame() {
@@ -327,14 +521,17 @@ void Menu::drawGame() {
     char buf[96];
 
     if (BigButton("Continuar", C_ACCENT, W, bh * 1.15f)) open = false;
-    if (BigButton("Reiniciar", C_PANEL2, half, bh)) { core_.reset(); open = false; }
+    if (BigButton("Reiniciar", C_PANEL2, half, bh)) { pendingReset = true; open = false; }
     ImGui::SameLine();
     if (BigButton("Captura de pantalla", C_PANEL2, half, bh)) { open = false; screenshotRequested = true; }
 
     snprintf(buf, sizeof buf, "Guardar estado  ·  ranura %d", slot);
-    if (BigButton(buf, C_PANEL2, half, bh)) toast(core_.saveState(slot) ? "Estado guardado en la ranura " + std::to_string(slot) : "Error al guardar el estado");
+    if (BigButton(buf, C_PANEL2, half, bh)) {
+        toast(core_.saveState(slot) ? "Estado guardado en la ranura " + std::to_string(slot) : "Error al guardar el estado");
+        refreshStatus(true);
+    }
     ImGui::SameLine();
-    snprintf(buf, sizeof buf, "Cargar estado  ·  ranura %d%s", slot, core_.stateExists(slot) ? "" : " (vacía)");
+    snprintf(buf, sizeof buf, "Cargar estado  ·  ranura %d%s", slot, stateExists_[slot] ? "" : " (vacía)");
     if (BigButton(buf, C_PANEL2, half, bh)) {
         if (core_.loadState(slot)) { open = false; toast("Estado cargado"); } else toast("La ranura " + std::to_string(slot) + " está vacía");
     }
@@ -401,18 +598,22 @@ void Menu::drawSettings() {
     float helpH = ImGui::GetFontSize() * 3.6f;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, C_PANEL);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-    ImGui::BeginChild("opts", ImVec2(0, -helpH), ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::BeginChild("opts", ImVec2(0, -helpH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
+    touchScroll();
     help_ = "";
+    ImGuiIO& io = ImGui::GetIO();
     float rowH = ImGui::GetFontSize() * 2.1f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     for (auto& o : c.defs()) {
         if (cats[cat_] != o.category) continue;
+        if (!c.appliesToRenderer(o)) continue;          // no se muestra lo que no funciona con este renderer
         int idx = c.index(o.id), n = (int)o.choices.size();
         ImGui::PushID(o.id);
         ImVec2 p = ImGui::GetCursorScreenPos();
         float w = ImGui::GetContentRegionAvail().x;
         bool act = ImGui::Selectable("##opt", false, 0, ImVec2(w, rowH));
-        bool foc = ImGui::IsItemFocused() || ImGui::IsItemHovered();
+        bool foc = (ImGui::IsItemFocused() && io.NavVisible) || ImGui::IsItemHovered();
+        bool viaTouch = act && !io.NavVisible;
         if (foc) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), col(C_PANEL2), 10 * scale_);
         float ty = p.y + (rowH - ImGui::GetFontSize()) * 0.5f;
         std::string label = std::string(c.isOverridden(o.id) ? "★ " : "") + o.label;
@@ -428,12 +629,17 @@ void Menu::drawSettings() {
         ImVec2 v0(v1.x - vs.x - 28 * scale_, p.y + rowH * 0.5f - vs.y * 0.5f - 6 * scale_);
         dl->AddRectFilled(v0, v1, col(foc ? C_ACCENT : ImVec4(0.20f, 0.22f, 0.30f, 1), foc ? 0.9f : 1.f), 30 * scale_);
         dl->AddText(ImVec2(v0.x + 14 * scale_, v0.y + 6 * scale_), col(C_TEXT), val.c_str());
-        if (foc && !confirmOpen_) {
-            help_ = o.help;
+        if ((ImGui::IsItemFocused() || ImGui::IsItemHovered()) && *o.help) help_ = o.help;
+        if (ImGui::IsItemFocused() && io.NavVisible && !confirmOpen_) {
             if (d & HidNpadButton_Right) c.setIndex(o.id, (idx + 1) % n);
             if (d & HidNpadButton_Left) c.setIndex(o.id, (idx + n - 1) % n);
         }
-        if (act) c.setIndex(o.id, (idx + 1) % n);
+        if (act) {
+            // Táctil: tocar la mitad izquierda de la píldora resta, la derecha suma
+            float mx = io.MouseClickedPos[0].x;
+            bool left = viaTouch && mx >= v0.x && mx < (v0.x + v1.x) * 0.5f;
+            c.setIndex(o.id, left ? (idx + n - 1) % n : (idx + 1) % n);
+        }
         ImGui::PopID();
     }
     ImGui::EndChild();
@@ -480,7 +686,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.3.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.4.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
     BeginCard("keys", ImGui::GetFontSize() * 9.2f);
@@ -507,6 +713,8 @@ void Menu::drawInfo() {
 // ------------------------------------------------------------------ frame
 void Menu::draw() {
     feedInput();
+    refreshStatus(false);
+    covers::pump();
     ImGuiIO& io = ImGui::GetIO();
     if (!wasOpen_) { openAnim_ = 0.f; wasOpen_ = true; }
     openAnim_ = std::min(1.f, openAnim_ + io.DeltaTime / 0.22f);
@@ -548,9 +756,11 @@ void Menu::draw() {
     float te = easeOut(tabAnim_);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, e * (0.35f + 0.65f * te));
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (1.f - te) * 24 * scale_);
-    ImGui::BeginChild("content", ImVec2(0, 0));
+    ImGui::BeginChild("content", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollWithMouse);
+    if (tab_ != 0 && tab_ != 2) touchScroll();
     if (tab_ == 0) drawLibrary(); else if (tab_ == 1) drawGame(); else if (tab_ == 2) drawSettings(); else drawInfo();
     drawConfirm();
+    drawGameOptions();
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::EndChild();
@@ -565,8 +775,9 @@ void Menu::draw() {
 
     ImGui::Render();
     video_.imguiRender(ImGui::GetDrawData());
-    if ((input_.down() & HidNpadButton_B) && core_.loaded() && !confirmOpen_) open = false;
+    if ((input_.down() & HidNpadButton_B) && core_.loaded() && !confirmOpen_ && !gameOptsOpen_) open = false;
     if (!open) wasOpen_ = false;
+    if (nextClaim_ && !scrollClaim_) scrollClaim_ = nextClaim_;   // la ventana que se arrastra queda fijada
 }
 
 void Menu::drawOsd() {

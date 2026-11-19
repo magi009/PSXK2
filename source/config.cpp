@@ -15,11 +15,19 @@ static const std::vector<OptionChoice> ONOFF = {{"Activado", "enabled"}, {"Desac
 #define C_INPUT   "Controles"
 #define C_SYS     "Sistema"
 
+static void assignFlags(std::vector<OptionDef>& defs);
+
 Config& Config::get() { static Config c; return c; }
 
 Config::Config() {
     defs_ = {
     // ---------------------------------------------------------------- VIDEO
+    {"gfx_preset", "Perfil gráfico", C_VIDEO, nullptr,
+        {{"Personalizado", "custom"}, {"Rendimiento", "performance"}, {"Equilibrado (recomendado)", "balanced"},
+         {"Calidad máxima", "quality"}}, 2,
+        "Ajusta de un toque las mejoras gráficas. Rendimiento: 2x, sin filtros. Equilibrado: 4x, PGXP, 32 bpp. "
+        "Calidad máxima: 8x, PGXP completo, xBR y MSAA (la protección de rendimiento la bajará si hace falta). "
+        "Si cambias una opción a mano pasa a Personalizado.", false},
     {"renderer", "Renderizador", C_VIDEO, "beetle_psx_hw_renderer",
         {{"Vulkan 1.4 (recomendado)", "hardware_vk"}, {"Software + salida OpenGL", "software"}}, 0,
         "Vulkan es el más rápido en Switch 2 y permite escalado interno, PGXP con perspectiva y MSAA. "
@@ -84,21 +92,21 @@ Config::Config() {
          {"3-point (estilo N64)", "3-point"}, {"JINC2", "JINC2"}}, 0,
         "Suaviza las texturas de los modelos 3D. xBR/SABR redondean bordes pixelados.", false},
     {"filter_ex_sprite", "Excluir sprites del filtro", C_TEX, "beetle_psx_hw_filter_exclude_sprite",
-        {{"No", "disable"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2, "", false},
+        {{"No", "disabled"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2, "", false},
     {"filter_ex_2d", "Excluir polígonos 2D del filtro", C_TEX, "beetle_psx_hw_filter_exclude_2d_polygon",
-        {{"No", "disable"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2,
+        {{"No", "disabled"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2,
         "Mantiene nítidos HUD y fondos pre-renderizados (RE2, FF7) mientras se filtran los modelos 3D.", false},
     {"adaptive_smooth", "Suavizado adaptativo 2D", C_TEX, "beetle_psx_hw_adaptive_smoothing", ONOFF, 0, "", false},
     {"supersampling", "Supersampling a nativa", C_TEX, "beetle_psx_hw_super_sampling", OFFON, 0,
         "Renderiza alto y reduce a 240p: look original sin dientes de sierra.", false},
-    {"mdec_yuv", "Suavizado de croma en FMV", C_TEX, "beetle_psx_hw_mdec_yuv", OFFON, 0,
+    {"mdec_yuv", "Suavizado de croma en FMV", C_TEX, "beetle_psx_hw_mdec_yuv", OFFON, 1,
         "Mejora los vídeos (MDEC) reduciendo bloques de color.", false},
     {"scaled_uv", "Offset UV escalado", C_TEX, "beetle_psx_hw_scaled_uv_offset", ONOFF, 0,
         "Reduce costuras entre texturas al usar resolución alta.", false},
 
     // ---------------------------------------------------------------- CPU
     {"cpu_freq", "Overclock de CPU", C_CPU, "beetle_psx_hw_cpu_freq_scale",
-        {{"100% (nativo)", "100%(native)"}, {"150%", "150%"}, {"200%", "200%"}, {"300%", "300%"}}, 0,
+        {{"100% (nativo)", "100%"}, {"125%", "125%"}, {"150%", "150%"}, {"200%", "200%"}, {"300%", "300%"}}, 0,
         "Reduce bajones de FPS del juego original. Puede romper juegos sensibles al tiempo.", true},
     {"gte_oc", "Overclock de GTE", C_CPU, "beetle_psx_hw_gte_overclock", OFFON, 0,
         "Acelera el coprocesador geométrico: menos ralentización en escenas 3D cargadas.", false},
@@ -143,12 +151,55 @@ Config::Config() {
     {"face_layout", "Distribución de botones", C_INPUT, nullptr,
         {{"Por posición (B=X, A=O, Y=□, X=△)", "position"}, {"Nintendo (A=X, B=O)", "nintendo"}}, 0, "", false},
 
+    // ---------------------------------------------------------------- BIBLIOTECA
+    {"library_view", "Vista de la biblioteca", "Biblioteca", nullptr,
+        {{"Cuadrícula con portadas", "grid"}, {"Lista", "list"}}, 0, "", false},
+    {"covers_auto", "Descargar portadas automáticamente", "Biblioteca", nullptr, ONOFF, 0,
+        "Con internet, descarga la portada de cada juego (por su nombre) y la guarda en la carpeta covers/. "
+        "Para usar una tuya, copia una imagen .png o .jpg con el mismo nombre que el juego en esa carpeta.", false},
+    {"covers_verify", "Verificar certificados (HTTPS)", "Biblioteca", nullptr, ONOFF, 0,
+        "Recomendado. Desactívalo solo si las portadas no descargan aunque tengas internet.", false},
+
     // ---------------------------------------------------------------- SISTEMA
     {"cpu_boost", "Modo de rendimiento (boost)", C_SYS, nullptr, OFFON, 0,
         "Sube el reloj de CPU con appletSetCpuBoostMode mientras juegas.", false},
     {"state_slot", "Ranura de estado rápido", C_SYS, nullptr,
         {{"0","0"},{"1","1"},{"2","2"},{"3","3"},{"4","4"},{"5","5"},{"6","6"},{"7","7"},{"8","8"},{"9","9"}}, 0, "", false},
     };
+    assignFlags(defs_);
+}
+
+static const struct { const char* id; unsigned flags; } kFlags[] = {
+    {"internal_res", OPT_HW_ONLY}, {"msaa", OPT_VULKAN_ONLY}, {"depth", OPT_HW_ONLY}, {"dither", OPT_HW_ONLY},
+    {"widescreen_ar", 0}, {"tex_filter", OPT_HW_ONLY}, {"filter_ex_sprite", OPT_HW_ONLY},
+    {"filter_ex_2d", OPT_HW_ONLY}, {"adaptive_smooth", OPT_VULKAN_ONLY}, {"supersampling", OPT_HW_ONLY},
+    {"mdec_yuv", OPT_VULKAN_ONLY}, {"scaled_uv", OPT_HW_ONLY}, {"pgxp_texture", OPT_HW_ONLY},
+};
+
+bool Config::appliesToRenderer(const OptionDef& d) const {
+    bool vk = !strcmp(value("renderer"), "hardware_vk");
+    if ((d.flags & OPT_VULKAN_ONLY) && !vk) return false;
+    if ((d.flags & OPT_HW_ONLY) && !strcmp(value("renderer"), "software")) return false;
+    return true;
+}
+
+// Perfiles: id -> índice de opción para cada perfil (Rendimiento, Equilibrado, Calidad)
+static const struct { const char* id; int perf, bal, qual; } kPreset[] = {
+    {"internal_res", 1, 2, 3}, {"msaa", 0, 0, 1}, {"depth", 1, 1, 1}, {"dither", 2, 2, 2},
+    {"pgxp_mode", 1, 1, 2}, {"pgxp_texture", 0, 0, 0}, {"pgxp_nclip", 0, 0, 0},
+    {"tex_filter", 0, 0, 2}, {"filter_ex_sprite", 2, 2, 2}, {"filter_ex_2d", 2, 2, 2},
+    {"adaptive_smooth", 1, 0, 0}, {"supersampling", 0, 0, 0}, {"mdec_yuv", 0, 1, 1}, {"scaled_uv", 0, 0, 0},
+};
+
+void Config::applyPreset(int idx) {
+    if (idx <= 0) return;
+    applyingPreset_ = true;
+    for (auto& p : kPreset) setIndex(p.id, idx == 1 ? p.perf : idx == 2 ? p.bal : p.qual);
+    applyingPreset_ = false;
+}
+
+static void assignFlags(std::vector<OptionDef>& defs) {
+    for (auto& d : defs) for (auto& f : kFlags) if (!strcmp(d.id, f.id)) d.flags = f.flags;
 }
 
 std::vector<std::string> Config::categories() const {
@@ -186,6 +237,15 @@ void Config::setIndex(const char* id, int idx) {
     const OptionDef* d = find(id);
     if (!d || idx < 0 || idx >= (int)d->choices.size()) return;
     if (editScope == Scope::Game && hasGame()) game_[id] = idx; else global_[id] = idx;
+    if (!strcmp(id, "gfx_preset")) applyPreset(idx);
+    else if (!applyingPreset_) {
+        // Tocar a mano una opción del perfil lo convierte en "Personalizado"
+        for (auto& p : kPreset)
+            if (!strcmp(p.id, id)) {
+                if (editScope == Scope::Game && hasGame()) game_["gfx_preset"] = 0; else global_["gfx_preset"] = 0;
+                break;
+            }
+    }
     if (d->coreKey || !strcmp(id, "screen_mode")) coreDirty_ = true;   // exclusiva activa el panorámico del núcleo
     if (!d->coreKey) feDirty_ = true;
 }

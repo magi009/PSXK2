@@ -46,7 +46,12 @@ public:
     void imguiShutdown();
     void imguiNewFrame();
     void imguiRender(ImDrawData* dd);
-    void addGameLayer();          // Vulkan: añade la imagen del juego al fondo del frame de ImGui
+    void addGameLayer();
+
+    // Texturas de la interfaz (portadas): RGBA8. Devuelven/aceptan un ImTextureID como entero.
+    uint64_t createTexture(const uint8_t* rgba, int w, int h);
+    void destroyTexture(uint64_t id);
+    unsigned textureGeneration() const;   // si cambia, todas las texturas anteriores dejaron de existir          // Vulkan: añade la imagen del juego al fondo del frame de ImGui
 
     void setAspect(float coreAspect) { coreAspect_ = coreAspect; }
     bool screenshot(const std::string& path);

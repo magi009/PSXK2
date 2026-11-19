@@ -37,6 +37,8 @@ static const retro_hw_render_context_negotiation_interface_vulkan* s_negotiation
 static bool s_videoDone = false;
 static bool s_blockAudio = true;
 static std::map<std::string, std::string> s_coreDefaults;  // valores por defecto del núcleo
+static std::map<std::string, std::vector<std::string>> s_coreAllowed;  // valores que acepta cada opción
+static std::map<std::string, std::string> s_warned;
 static std::string s_valueBuf[256];
 static unsigned s_valueIdx = 0;
 
@@ -120,13 +122,33 @@ static bool RETRO_CALLCONV env_cb(unsigned cmd, void* data) {
             std::string vals = semi + 1;
             while (!vals.empty() && vals[0] == ' ') vals.erase(0, 1);
             s_coreDefaults[v->key] = vals.substr(0, vals.find('|'));
+            auto& allowed = s_coreAllowed[v->key];
+            allowed.clear();
+            size_t a = 0;
+            for (;;) {
+                size_t b = vals.find('|', a);
+                allowed.push_back(vals.substr(a, b == std::string::npos ? std::string::npos : b - a));
+                if (b == std::string::npos) break;
+                a = b + 1;
+            }
         }
         return true;
     }
     case RETRO_ENVIRONMENT_GET_VARIABLE: {
         auto* v = (retro_variable*)data;
         const char* managed = cfg.coreValue(v->key);
-        if (managed) { v->value = managed; return true; }
+        if (managed) {
+            // Comprobación: si el núcleo no acepta ese valor, se avisa en el log y se usa su valor por defecto
+            auto al = s_coreAllowed.find(v->key);
+            bool ok = al == s_coreAllowed.end();
+            if (!ok) for (auto& x : al->second) if (x == managed) ok = true;
+            if (ok) { v->value = managed; return true; }
+            if (s_warned[v->key] != managed) {
+                s_warned[v->key] = managed;
+                LOGI("[host] AVISO: el núcleo no acepta %s=\"%s\"; se usa \"%s\"", v->key, managed,
+                     s_coreDefaults[v->key].c_str());
+            }
+        }
         auto it = s_coreDefaults.find(v->key);
         if (it == s_coreDefaults.end()) { v->value = nullptr; return false; }
         std::string& slot = s_valueBuf[s_valueIdx++ & 255];
@@ -291,7 +313,13 @@ void CoreHost::unloadGame() {
     appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
 }
 
-void CoreHost::reset() { if (loaded_) retro_reset(); }
+void CoreHost::reset() {
+    if (!loaded_) return;
+    retro_reset();
+    loadTick_ = armGetSystemTick();   // la protección de rendimiento espera otra vez 15 s
+    fpsTick_ = 0; frames_ = 0;
+    LOGI("[host] juego reiniciado");
+}
 
 void CoreHost::runFrame(bool fastForward) {
     // Con VSync la pantalla marca el ritmo y el audio se adapta (DRC); sin VSync el audio marca el ritmo.

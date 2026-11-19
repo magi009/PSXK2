@@ -1,0 +1,6 @@
+Portadas de los juegos.
+- Con internet, PSX-K2 descarga aquí la portada de cada juego automáticamente.
+- Para usar una tuya: copia una imagen .png o .jpg con EXACTAMENTE el mismo nombre que el juego.
+  Ejemplo: roms/Castlevania - Symphony of the Night (USA).chd
+        -> covers/Castlevania - Symphony of the Night (USA).png
+- Tu imagen siempre tiene prioridad y nunca se sobrescribe sola.
