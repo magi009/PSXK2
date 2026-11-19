@@ -22,7 +22,7 @@
 
 namespace covers {
 
-struct Job { std::string stem; bool download; Kind kind; bool force; };
+struct Job { std::string stem; bool download; Kind kind; bool force; bool verify; };
 struct Decoded { std::string stem; std::vector<uint8_t> rgba; int w = 0, h = 0; bool ok = false; };
 struct Entry { uint64_t tex = 0; float aspect = 1.f; State state = State::None; unsigned gen = 0; };
 
@@ -87,9 +87,8 @@ static bool decode(const std::vector<unsigned char>& file, Decoded& out) {
     return true;
 }
 
-static bool download(const std::string& stem, Kind kind, std::vector<unsigned char>& file) {
+static bool download(const std::string& stem, Kind kind, bool verify, std::vector<unsigned char>& file) {
     static const char* kFolder[] = {"Named_Boxarts", "Named_Titles", "Named_Snaps"};
-    bool verify = Config::get().isOn("covers_verify");
     std::vector<std::string> names = {thumbName(stem)};
     std::string nd = thumbName(stripDisc(stem));
     if (nd != names[0]) names.push_back(nd);
@@ -120,7 +119,7 @@ static void worker() {
             d.ok = decode(file, d);
             if (!d.ok) LOGI("[covers] no se pudo leer %s", local.c_str());
         } else if (job.download && net::online()) {
-            if (download(job.stem, job.kind, file) && (d.ok = decode(file, d))) {
+            if (download(job.stem, job.kind, job.verify, file) && (d.ok = decode(file, d))) {
                 // Si se reemplaza, borra variantes .jpg previas para que mande la nueva .png
                 for (const char* e : {".jpg", ".jpeg", ".JPG"}) ::remove((s_dir + "/" + job.stem + e).c_str());
                 paths::writeFile(s_dir + "/" + job.stem + ".png", file.data(), file.size());
@@ -152,7 +151,8 @@ void shutdown() {
 }
 
 static void enqueue(const std::string& stem, bool download, Kind kind, bool force) {
-    { std::lock_guard<std::mutex> l(s_mx); s_jobs.push_back({stem, download, kind, force}); }
+    bool verify = Config::get().isOn("covers_verify");   // se lee aquí (hilo principal), no en el hilo de descargas
+    { std::lock_guard<std::mutex> l(s_mx); s_jobs.push_back({stem, download, kind, force, verify}); }
     s_cv.notify_one();
 }
 

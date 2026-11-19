@@ -47,7 +47,8 @@ void Audio::updateRate() {
     if (block_) { step_ = baseStep_; return; }
     float f = fill();
     double dev = (f - 0.5f) / 0.5f;              // -1 (vacía) .. +1 (llena)
-    if (dev > 1) dev = 1; if (dev < -1) dev = -1;
+    if (dev > 1) dev = 1;
+    if (dev < -1) dev = -1;
     step_ = baseStep_ * (1.0 + 0.005 * dev);
 }
 
