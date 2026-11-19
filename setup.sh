@@ -25,23 +25,35 @@ mkdir -p third_party/lib third_party/imgui_backend
 if [ ! -d third_party/beetle-psx ]; then
   git clone --depth 1 https://github.com/libretro/beetle-psx-libretro.git third_party/beetle-psx
 fi
-# Su plataforma "libnx" apunta a libnx de Switch 1: la redirigimos a libounce
-sed -i 's|$(DEVKITPRO)/libnx/switch_rules|$(DEVKITPRO)/libounce/switch2_rules|g; s|$(DEVKITPRO)/libnx|$(DEVKITPRO)/libounce|g' \
-  third_party/beetle-psx/Makefile
-# Rutas de cabeceras de OunceVK (GL/gl.h, EGL, Vulkan) y de libounce
-EXTRA_INC=""
-for h in GL/gl.h EGL/egl.h vulkan/vulkan.h switch.h; do
-  f=$(find "$DEVKITPRO" -path "*/include/$h" 2>/dev/null | grep -v '/libnx/' | head -1 || true)
+# Beetle no trae plataforma Switch: añadimos "switch2" antes del bloque de Windows
+if ! grep -q 'platform), switch2' third_party/beetle-psx/Makefile; then
+  python3 - <<'PY'
+p = "third_party/beetle-psx/Makefile"
+s = open(p).read()
+block = open("compat/beetle-switch2.mk").read()
+marker = "# Windows\nelse\n"
+assert marker in s, "no se encontró el bloque de Windows en el Makefile de Beetle"
+s = s.replace(marker, block + "\n" + marker, 1)
+open(p, "w").write(s)
+PY
+fi
+
+# Cabeceras: GL/EGL de OunceVK (preferimos portlibs/switch2) y libounce.
+# Vulkan NO: el núcleo usa sus propias cabeceras Khronos (parallel-psx/khronos).
+EXTRA_INC="-I$PWD/compat"
+for h in GL/gl.h EGL/egl.h KHR/khrplatform.h switch.h; do
+  f=$( (find "$DEVKITPRO/portlibs/switch2" "$DEVKITPRO/libounce" -path "*/include/$h" 2>/dev/null; \
+        find "$DEVKITPRO/portlibs/switch" -path "*/include/$h" 2>/dev/null) | head -1 || true)
   echo "cabecera $h -> ${f:-NO ENCONTRADA}"
   [ -n "$f" ] && EXTRA_INC="$EXTRA_INC -I${f%/$h}"
 done
-export CFLAGS="${CFLAGS:-} $EXTRA_INC -D__SWITCH__"
-export CXXFLAGS="${CXXFLAGS:-} $EXTRA_INC -D__SWITCH__"
+export CFLAGS="${CFLAGS:-} $EXTRA_INC"
+export CXXFLAGS="${CXXFLAGS:-} $EXTRA_INC"
 echo "EXTRA_INC=$EXTRA_INC"
 make -C third_party/beetle-psx clean >/dev/null 2>&1 || true
 make -C third_party/beetle-psx -j"$(nproc)" \
-     platform=libnx HAVE_HW=1 HAVE_OPENGL=1 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0 STATIC_LINKING=1
-cp third_party/beetle-psx/mednafen_psx_hw_libretro_libnx.a third_party/lib/libbeetlepsx.a
+     platform=switch2 HAVE_HW=1 HAVE_OPENGL=1 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0
+cp third_party/beetle-psx/mednafen_psx_hw_libretro_switch2.a third_party/lib/libbeetlepsx.a
 
 # 2) Interfaz: Dear ImGui (MIT) con backends OpenGL3 y Vulkan
 if [ ! -d third_party/imgui ]; then
