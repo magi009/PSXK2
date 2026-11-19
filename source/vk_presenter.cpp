@@ -413,13 +413,8 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
     VkImageLayout layout = coreImg_.image_layout;
     VkDescriptorSet set = VK_NULL_HANDLE;
     for (auto& e : texCache_)
-        if (e.view == view && e.linear == linear && e.layout == layout) set = e.set;
+        if (e.view == view && e.linear == linear && e.layout == layout) { set = e.set; e.lastUse = frameCount_; }
     if (!set) {
-        if (texCache_.size() >= 24) {          // el núcleo recreó sus imágenes: limpiar
-            vkDeviceWaitIdle(dev_);
-            for (auto& e : texCache_) { ImGui_ImplVulkan_RemoveTexture(e.set); if (e.opaqueView) vkDestroyImageView(dev_, e.opaqueView, nullptr); }
-            texCache_.clear();
-        }
         // Vista propia con alfa = 1: ImGui mezcla por alfa y el núcleo puede dejarlo en 0
         VkImageViewCreateInfo vi = coreImg_.create_info;
         vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO; vi.pNext = nullptr;
@@ -428,12 +423,32 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
         VkImageView opaque = VK_NULL_HANDLE;
         if (vkCreateImageView(dev_, &vi, nullptr, &opaque) != VK_SUCCESS) opaque = view;
         set = ImGui_ImplVulkan_AddTexture(linear ? sampLinear_ : sampNearest_, opaque, layout);
-        texCache_.push_back({view, linear, layout, set, opaque == view ? VK_NULL_HANDLE : opaque});
-        LOGI("[vk] textura del núcleo registrada (vista %p, layout %d)", (void*)view, layout);
+        texCache_.push_back({view, linear, layout, set, opaque == view ? VK_NULL_HANDLE : opaque, frameCount_});
+        static unsigned logged = 0;
+        if (logged++ < 12) LOGI("[vk] textura del núcleo registrada (vista %p, layout %d, en caché %zu)", (void*)view, layout, texCache_.size());
     }
     pendingGame_ = true; pendingSet_ = set;
     pendingRect_[0] = (float)vx; pendingRect_[1] = (float)vy;
     pendingRect_[2] = (float)(vx + vw); pendingRect_[3] = (float)(vy + vh);
+}
+
+void VkPresenter::collectTextures() {
+    // Entradas sin usar desde hace 8 frames pasan al "cementerio"; se destruyen cuando ningún
+    // frame en vuelo puede estar usándolas (sin vkDeviceWaitIdle: el núcleo usa la GPU en paralelo)
+    for (size_t i = 0; i < texCache_.size();) {
+        if (frameCount_ - texCache_[i].lastUse > 8) {
+            texCache_[i].lastUse = frameCount_;
+            texGraveyard_.push_back(texCache_[i]);
+            texCache_.erase(texCache_.begin() + i);
+        } else i++;
+    }
+    for (size_t i = 0; i < texGraveyard_.size();) {
+        if (frameCount_ - texGraveyard_[i].lastUse > kFrames + 2) {
+            ImGui_ImplVulkan_RemoveTexture(texGraveyard_[i].set);
+            if (texGraveyard_[i].opaqueView) vkDestroyImageView(dev_, texGraveyard_[i].opaqueView, nullptr);
+            texGraveyard_.erase(texGraveyard_.begin() + i);
+        } else i++;
+    }
 }
 
 void VkPresenter::addGameLayer() {
@@ -517,6 +532,8 @@ void VkPresenter::endFrame() {
         }
     }
     frame_ = (frame_ + 1) % kFrames;
+    frameCount_++;
+    if (uiReady_) collectTextures();
     inFrame_ = false;
 }
 
@@ -549,7 +566,8 @@ void VkPresenter::imguiShutdown() {
     if (!uiReady_) return;
     vkDeviceWaitIdle(dev_);
     for (auto& e : texCache_) { ImGui_ImplVulkan_RemoveTexture(e.set); if (e.opaqueView) vkDestroyImageView(dev_, e.opaqueView, nullptr); }
-    texCache_.clear();
+    for (auto& e : texGraveyard_) { ImGui_ImplVulkan_RemoveTexture(e.set); if (e.opaqueView) vkDestroyImageView(dev_, e.opaqueView, nullptr); }
+    texCache_.clear(); texGraveyard_.clear();
     ImGui_ImplVulkan_Shutdown();
     vkDestroyDescriptorPool(dev_, uiPool_, nullptr);
     vkDestroySampler(dev_, sampNearest_, nullptr);

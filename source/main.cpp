@@ -29,6 +29,7 @@ int main(int, char**) {
 
     AppletOperationMode lastMode = appletGetOperationMode();
     bool shotPending = false;
+    u64 beatTick = armGetSystemTick(); unsigned beatFrames = 0;
 
     while (appletMainLoop() && !menu.quit) {
         input.update();
@@ -78,6 +79,12 @@ int main(int, char**) {
             if (input.hotkey() == Hotkey::Menu && core.loaded()) menu.open = false;
         }
         video.swap();
+        beatFrames++;
+        if (armTicksToNs(armGetSystemTick() - beatTick) >= 5000000000ULL) {
+            LOGI("[main] vivo: %u ciclos en 5 s, juego %s, menú %s", beatFrames,
+                 core.loaded() ? "sí" : "no", menu.open ? "abierto" : "cerrado");
+            beatTick = armGetSystemTick(); beatFrames = 0;
+        }
     }
 
     cfg.saveGlobal();

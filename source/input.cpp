@@ -27,6 +27,8 @@ void Input::update() {
     }
     u64 h = padGetButtons(&pads_[0]);
     u64 d = padGetButtonsDown(&pads_[0]);
+    if (h != lastButtons_ && buttonLogs_ < 80) { buttonLogs_++; LOGI("[input] botones j1 = 0x%llx", (unsigned long long)h); lastButtons_ = h; }
+    probeRaw();
     hotkey_ = Hotkey::None;
     ff_ = false;
     if (h & HidNpadButton_Minus) {
@@ -48,6 +50,27 @@ void Input::update() {
     } else {
         comboStart_ = 0;
     }
+}
+
+// Lee directamente cada canal de HID (una vez por segundo, los primeros 15 s) para ver por dónde
+// llegan de verdad las pulsaciones en Switch 2
+void Input::probeRaw() {
+    u64 now = armGetSystemTick();
+    if (probeLogs_ >= 15 || (lastProbe_ && armTicksToNs(now - lastProbe_) < 1000000000ULL)) return;
+    lastProbe_ = now; probeLogs_++;
+    HidNpadCommonState st;
+    auto show = [&](const char* name, size_t n) {
+        if (n) LOGI("[input]   %-18s attr=0x%x botones=0x%llx stickL=%d,%d", name, st.attributes,
+                    (unsigned long long)st.buttons, st.analog_stick_l.x, st.analog_stick_l.y);
+        else LOGI("[input]   %-18s (sin datos)", name);
+    };
+    LOGI("[input] sondeo %u: estilos handheld=0x%x no1=0x%x", probeLogs_,
+         hidGetNpadStyleSet(HidNpadIdType_Handheld), hidGetNpadStyleSet(HidNpadIdType_No1));
+    show("handheld/Handheld", hidGetNpadStatesHandheld(HidNpadIdType_Handheld, &st, 1));
+    show("handheld/SystemExt", hidGetNpadStatesSystemExt(HidNpadIdType_Handheld, &st, 1));
+    show("no1/FullKey", hidGetNpadStatesFullKey(HidNpadIdType_No1, &st, 1));
+    show("no1/JoyDual", hidGetNpadStatesJoyDual(HidNpadIdType_No1, &st, 1));
+    show("no1/SystemExt", hidGetNpadStatesSystemExt(HidNpadIdType_No1, &st, 1));
 }
 
 int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id) const {

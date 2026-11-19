@@ -105,7 +105,10 @@ private:
 
     // Imagen del núcleo como textura (muestreo, no blit: el núcleo solo garantiza uso SAMPLED)
     VkSampler sampNearest_ = VK_NULL_HANDLE, sampLinear_ = VK_NULL_HANDLE;
-    struct TexEntry { VkImageView view; bool linear; VkImageLayout layout; VkDescriptorSet set; VkImageView opaqueView; };
+    struct TexEntry { VkImageView view; bool linear; VkImageLayout layout; VkDescriptorSet set; VkImageView opaqueView; uint64_t lastUse; };
+    std::vector<TexEntry> texGraveyard_;   // se liberan cuando la GPU ya no las usa
+    uint64_t frameCount_ = 0;
+    void collectTextures();
     std::vector<TexEntry> texCache_;
     bool pendingGame_ = false;
     VkDescriptorSet pendingSet_ = VK_NULL_HANDLE;
