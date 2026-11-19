@@ -14,7 +14,7 @@ if [ ! -f "$DEVKITPRO/libounce/switch2_rules" ]; then
   $SUDO dkp-pacman-key --lsign-key DFEAE7FA965D1E6C0D41D4D75DB9FDBFA4A4DE29
   grep -q '^\[ounce\]' "$DEVKITPRO/pacman/etc/pacman.conf" || \
     printf '\n[ounce]\nServer = https://pkg.ouncebrew.org\n' | $SUDO tee -a "$DEVKITPRO/pacman/etc/pacman.conf"
-  $SUDO dkp-pacman -Sy --needed switch-dev switch-glad switch-zlib libounce ouncevk libkaihen
+  $SUDO dkp-pacman -Sy --noconfirm --needed switch-glad switch-zlib libounce ouncevk libkaihen
 fi
 # Entorno de Switch 2 (compiladores, rutas de libounce/OunceVK)
 source "$DEVKITPRO/switch2vars.sh"
