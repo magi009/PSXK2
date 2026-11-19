@@ -7,7 +7,7 @@ Interfaz en español con Dear ImGui, pensada para mando y pantalla táctil.
 
 | Área | Qué incluye |
 |---|---|
-| Render | **Vulkan 1.4** (OunceVK, por defecto), OpenGL 4.3 o Software exacto |
+| Render | **Vulkan 1.4** (OunceVK, por defecto) o Software exacto con salida OpenGL |
 | Resolución interna | 1x (240p), 2x, 4x (~1080p), 8x (1920 líneas, por encima de 4K) |
 | Salida | Auto (1080p portátil / 2160p en dock), 720p, 1080p, 1440p, 2160p |
 | Escaladores de salida | Vulkan: Nearest y Bilineal · OpenGL: Nearest, Bilineal, Sharp Bilinear, Bicúbico Catmull-Rom, CRT scanlines |
@@ -68,10 +68,11 @@ subpíxel), que es lo que hace temblar y deformarse los polígonos de las caras 
 ## Limitaciones conocidas (léelas)
 
 - **DirectX 12 no es posible**: es una API exclusiva de Windows/Xbox. En Switch 2 las APIs reales son Vulkan y OpenGL (OunceVK).
-- **No probado en consola todavía**: el código está escrito contra la API de libnx/libretro y la documentación
-  pública de ounce-devkit, pero no se ha compilado aquí. La superficie Vulkan usa `VK_NN_vi_surface`
+- **Compila en GitHub Actions, pero no se ha probado en consola todavía.** La superficie Vulkan usa `VK_NN_vi_surface`
   sobre la `NWindow`; si OunceVK crea la superficie de otra forma, ajusta `VkPresenter::createDevice()`
   siguiendo `examples/` de ounce-devkit.
+- **Renderer OpenGL del núcleo desactivado**: sus símbolos GL chocan con OunceVK al enlazar. El modo Software
+  sigue disponible y se muestra con OpenGL y todos sus escaladores.
 - **Vulkan**: escalado de salida por `vkCmdBlitImage` (nearest/bilineal). Los shaders Sharp/Bicúbico/CRT
   están en el backend OpenGL; portarlos a SPIR-V es el siguiente paso. Capturas de pantalla solo en OpenGL por ahora.
 - **4K**: con Vulkan y salida automática se pide 3840x2160 en el dock. Si el sistema lo rechaza se usa 1080p (queda en el log).
