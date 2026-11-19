@@ -1,0 +1,8 @@
+build/
+dist/
+third_party/
+*.nro
+*.nacp
+*.elf
+*.map
+ounce.gpg

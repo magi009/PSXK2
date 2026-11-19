@@ -1,0 +1,6 @@
+Copia aquí tus copias de seguridad de juegos PSX (de discos que poseas):
+  .cue + .bin, .chd (recomendado: ocupa menos), .pbp, .iso, .ccd, .exe
+Juegos de varios discos: crea un .m3u con una línea por disco, p. ej. "Resident Evil 2.m3u":
+  Resident Evil 2 (USA) (Disc 1).chd
+  Resident Evil 2 (USA) (Disc 2).chd
+Se permiten subcarpetas (hasta 2 niveles).

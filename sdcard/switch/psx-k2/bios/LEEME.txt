@@ -1,0 +1,3 @@
+Coloca aquí la BIOS volcada de TU PlayStation (no se incluye ninguna):
+  scph5501.bin  (USA, NTSC-U)   scph5500.bin  (Japón)   scph5502.bin  (Europa, PAL)
+Los nombres deben estar en minúsculas. Con una basta para su región.

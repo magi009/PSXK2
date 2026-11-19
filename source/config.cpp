@@ -1,0 +1,242 @@
+#include "config.h"
+#include "paths.h"
+#include <cstdio>
+#include <cstring>
+
+static const std::vector<OptionChoice> OFFON = {{"Desactivado", "disabled"}, {"Activado", "enabled"}};
+static const std::vector<OptionChoice> ONOFF = {{"Activado", "enabled"}, {"Desactivado", "disabled"}};
+
+#define C_VIDEO   "Video"
+#define C_3D      "Mejoras 3D (PGXP)"
+#define C_TEX     "Texturas y filtros"
+#define C_CPU     "CPU y rendimiento"
+#define C_CD      "CD y BIOS"
+#define C_MC      "Memory Cards"
+#define C_INPUT   "Controles"
+#define C_SYS     "Sistema"
+
+Config& Config::get() { static Config c; return c; }
+
+Config::Config() {
+    defs_ = {
+    // ---------------------------------------------------------------- VIDEO
+    {"renderer", "Renderizador", C_VIDEO, "beetle_psx_hw_renderer",
+        {{"Vulkan 1.4 (recomendado)", "hardware_vk"}, {"OpenGL 4.3", "hardware_gl"}, {"Software (máxima precisión)", "software"}}, 0,
+        "Vulkan es el más rápido en Switch 2 y permite escalado interno, PGXP y MSAA. OpenGL ofrece todos los "
+        "escaladores por shader. Software es exacto pero a resolución nativa. Cambiar entre Vulkan y OpenGL "
+        "requiere reiniciar el emulador.", true},
+    {"internal_res", "Resolución interna", C_VIDEO, "beetle_psx_hw_internal_resolution",
+        {{"1x  nativa (320x240)", "1x(native)"}, {"2x  (640x480)", "2x"}, {"4x  (1280x960 ~1080p)", "4x"},
+         {"8x  (2560x1920 ~4K)", "8x"}}, 2,
+        "Multiplica la resolución de render del GPU de PSX. 8x supera la altura de 2160p (4K). "
+        "Requiere mucho GPU: si baja de 60 fps usa 4x.", false},
+    {"output_res", "Resolución de salida", C_VIDEO, nullptr,
+        {{"Automática (según modo)", "auto"}, {"720p", "720"}, {"1080p", "1080"}, {"1440p", "1440"}, {"2160p (4K)", "2160"}}, 0,
+        "Tamaño del framebuffer final. Automática: 1080p en portátil y 2160p (4K) en el dock. Si el "
+        "sistema rechaza la resolución se vuelve a 1080p (ver log).", false},
+    {"aspect", "Relación de aspecto", C_VIDEO, nullptr,
+        {{"4:3 corregida", "4:3"}, {"16:9 (usar con Widescreen hack)", "16:9"}, {"Escalado entero", "integer"},
+         {"Estirar a pantalla", "stretch"}}, 0, "", false},
+    {"upscale_shader", "Escalador / filtro de salida", C_VIDEO, nullptr,
+        {{"Nearest (píxel nítido)", "nearest"}, {"Bilineal", "bilinear"}, {"Sharp Bilinear", "sharp"},
+         {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}}, 2,
+        "Filtro que lleva la imagen renderizada al tamaño de pantalla. Con Vulkan, Sharp/Bicúbico/CRT usan "
+        "bilineal por ahora (los shaders completos están en el backend OpenGL).", false},
+    {"msaa", "Antialiasing MSAA", C_VIDEO, "beetle_psx_hw_msaa",
+        {{"1x (off)", "1x"}, {"2x", "2x"}, {"4x", "4x"}, {"8x", "8x"}}, 0,
+        "Suaviza bordes de polígonos. Muy costoso junto a resolución alta.", false},
+    {"depth", "Profundidad de color", C_VIDEO, "beetle_psx_hw_depth",
+        {{"16 bpp (nativa)", "16bpp(native)"}, {"32 bpp (sin bandas)", "32bpp"}}, 1, "", false},
+    {"dither", "Dithering", C_VIDEO, "beetle_psx_hw_dither_mode",
+        {{"1x (nativo)", "1x(native)"}, {"A resolución interna", "internal resolution"}, {"Desactivado", "disabled"}}, 2,
+        "Desactivarlo junto a 32 bpp elimina la trama de puntos típica de PSX.", false},
+    {"widescreen", "Widescreen hack", C_VIDEO, "beetle_psx_hw_widescreen_hack", OFFON, 0,
+        "Fuerza 3D panorámico. Puede cortar HUDs o mostrar objetos que aparecen de golpe.", false},
+    {"widescreen_ar", "Aspecto del Widescreen hack", C_VIDEO, "beetle_psx_hw_widescreen_hack_aspect_ratio",
+        {{"16:9", "16:9"}, {"16:10", "16:10"}, {"21:9", "21:9"}}, 0, "", false},
+    {"crop_overscan", "Recortar overscan", C_VIDEO, "beetle_psx_hw_crop_overscan",
+        {{"Desactivado", "disabled"}, {"Estático", "static"}, {"Inteligente", "smart"}}, 1, "", false},
+    {"vsync", "VSync", C_VIDEO, nullptr, ONOFF, 0, "", false},
+    {"show_fps", "Mostrar FPS", C_VIDEO, nullptr, OFFON, 0, "", false},
+
+    // ---------------------------------------------------------------- 3D / PGXP
+    {"pgxp_mode", "PGXP (precisión geométrica)", C_3D, "beetle_psx_hw_pgxp_mode",
+        {{"Desactivado", "disabled"}, {"Solo memoria", "memory only"}, {"Memoria + CPU (máximo)", "memory + CPU"}}, 1,
+        "Arregla los polígonos que tiemblan y se deforman (wobble). Es lo que hace que caras como la de "
+        "Leon en Resident Evil 2 se vean sólidas y no 'derritiéndose'. 'Memoria + CPU' es más preciso y más lento.", true},
+    {"pgxp_texture", "Corrección de perspectiva de texturas", C_3D, "beetle_psx_hw_pgxp_texture", ONOFF, 0,
+        "Elimina el 'warping' de texturas en suelos y paredes. Requiere PGXP activo.", false},
+    {"pgxp_vertex", "Caché de vértices PGXP", C_3D, "beetle_psx_hw_pgxp_vertex", OFFON, 0,
+        "Mejora juegos que pierden precisión entre frames. Puede causar glitches en algunos títulos.", false},
+    {"pgxp_nclip", "Culling preciso (NCLIP)", C_3D, "beetle_psx_hw_pgxp_nclip", ONOFF, 0,
+        "Evita huecos y polígonos que desaparecen en modelos de personajes.", false},
+    {"pgxp_2d_tol", "Tolerancia 2D de PGXP", C_3D, "beetle_psx_hw_pgxp_2d_tol",
+        {{"Desactivada", "disabled"}, {"0 px", "0px"}, {"1 px", "1px"}, {"2 px", "2px"}, {"4 px", "4px"}}, 0,
+        "Ajusta elementos 2D dibujados como polígonos (HUD, menús) cuando PGXP los desalinea.", false},
+    {"line_render", "Hack de líneas a polígonos", C_3D, "beetle_psx_hw_line_render",
+        {{"Por defecto", "default"}, {"Agresivo", "aggressive"}, {"Desactivado", "disabled"}}, 0,
+        "Cierra huecos de 1 píxel entre polígonos al escalar.", false},
+
+    // ---------------------------------------------------------------- TEXTURAS
+    {"tex_filter", "Filtrado de texturas", C_TEX, "beetle_psx_hw_filter",
+        {{"Nearest (original)", "nearest"}, {"SABR", "SABR"}, {"xBR", "xBR"}, {"Bilineal", "bilinear"},
+         {"3-point (estilo N64)", "3-point"}, {"JINC2", "JINC2"}}, 0,
+        "Suaviza las texturas de los modelos 3D. xBR/SABR redondean bordes pixelados.", false},
+    {"filter_ex_sprite", "Excluir sprites del filtro", C_TEX, "beetle_psx_hw_filter_exclude_sprite",
+        {{"No", "disable"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2, "", false},
+    {"filter_ex_2d", "Excluir polígonos 2D del filtro", C_TEX, "beetle_psx_hw_filter_exclude_2d_polygon",
+        {{"No", "disable"}, {"Opacos", "opaque"}, {"Todos", "all"}}, 2,
+        "Mantiene nítidos HUD y fondos pre-renderizados (RE2, FF7) mientras se filtran los modelos 3D.", false},
+    {"adaptive_smooth", "Suavizado adaptativo 2D", C_TEX, "beetle_psx_hw_adaptive_smoothing", ONOFF, 0, "", false},
+    {"supersampling", "Supersampling a nativa", C_TEX, "beetle_psx_hw_super_sampling", OFFON, 0,
+        "Renderiza alto y reduce a 240p: look original sin dientes de sierra.", false},
+    {"mdec_yuv", "Suavizado de croma en FMV", C_TEX, "beetle_psx_hw_mdec_yuv", OFFON, 0,
+        "Mejora los vídeos (MDEC) reduciendo bloques de color.", false},
+    {"scaled_uv", "Offset UV escalado", C_TEX, "beetle_psx_hw_scaled_uv_offset", ONOFF, 0,
+        "Reduce costuras entre texturas al usar resolución alta.", false},
+
+    // ---------------------------------------------------------------- CPU
+    {"cpu_freq", "Overclock de CPU", C_CPU, "beetle_psx_hw_cpu_freq_scale",
+        {{"100% (nativo)", "100%(native)"}, {"150%", "150%"}, {"200%", "200%"}, {"300%", "300%"}}, 0,
+        "Reduce bajones de FPS del juego original. Puede romper juegos sensibles al tiempo.", true},
+    {"gte_oc", "Overclock de GTE", C_CPU, "beetle_psx_hw_gte_overclock", OFFON, 0,
+        "Acelera el coprocesador geométrico: menos ralentización en escenas 3D cargadas.", false},
+    {"gpu_oc", "Overclock de rasterizador GPU", C_CPU, "beetle_psx_hw_gpu_overclock",
+        {{"1x (nativo)", "1x(native)"}, {"2x", "2x"}, {"4x", "4x"}}, 0, "", false},
+    {"audio_sync", "Sincronizar con audio", C_CPU, nullptr, ONOFF, 0,
+        "Velocidad exacta y sonido sin cortes. Desactivar solo para pruebas.", false},
+
+    // ---------------------------------------------------------------- CD / BIOS
+    {"skip_bios", "Saltar logo de BIOS", C_CD, "beetle_psx_hw_skip_bios", OFFON, 0, "", true},
+    {"cd_access", "Acceso al CD", C_CD, "beetle_psx_hw_cd_access_method",
+        {{"Síncrono", "sync"}, {"Asíncrono", "async"}, {"Precargar en RAM", "precache"}}, 0,
+        "Precargar elimina tirones de lectura en la microSD (usa más RAM).", true},
+    {"cd_fastload", "Carga rápida de CD", C_CD, "beetle_psx_hw_cd_fastload",
+        {{"2x (nativo)", "2x(native)"}, {"4x", "4x"}, {"8x", "8x"}}, 0,
+        "Acorta pantallas de carga. Algunos juegos pueden fallar.", false},
+
+    // ---------------------------------------------------------------- MEMCARDS
+    {"memcard0_method", "Formato memcard ranura 1", C_MC, "beetle_psx_hw_use_mednafen_memcard0_method",
+        {{"Libretro (.srm)", "libretro"}, {"Mednafen (.mcr)", "mednafen"}}, 0, "", true},
+    {"memcard1", "Activar memcard ranura 2", C_MC, "beetle_psx_hw_enable_memcard1", ONOFF, 0, "", true},
+    {"shared_mc", "Memcards compartidas entre juegos", C_MC, "beetle_psx_hw_shared_memory_cards", OFFON, 0,
+        "Una sola tarjeta para todos los juegos, como una consola real.", true},
+    {"autosave", "Guardado automático de memcard", C_MC, nullptr,
+        {{"Cada 5 s si cambia", "5"}, {"Cada 30 s si cambia", "30"}, {"Solo al salir", "0"}}, 0, "", false},
+
+    // ---------------------------------------------------------------- CONTROLES
+    {"pad1", "Mando jugador 1", C_INPUT, nullptr,
+        {{"DualShock (analógico)", "dualshock"}, {"Mando digital", "digital"}}, 0, "", true},
+    {"pad2", "Mando jugador 2", C_INPUT, nullptr,
+        {{"DualShock (analógico)", "dualshock"}, {"Mando digital", "digital"}, {"Ninguno", "none"}}, 0, "", true},
+    {"analog_toggle", "Botón ANALOG (L3+R3+Start)", C_INPUT, "beetle_psx_hw_analog_toggle", OFFON, 0, "", false},
+    {"rumble", "Vibración", C_INPUT, nullptr, ONOFF, 0, "", false},
+    {"face_layout", "Distribución de botones", C_INPUT, nullptr,
+        {{"Por posición (B=X, A=O, Y=□, X=△)", "position"}, {"Nintendo (A=X, B=O)", "nintendo"}}, 0, "", false},
+
+    // ---------------------------------------------------------------- SISTEMA
+    {"cpu_boost", "Modo de rendimiento (boost)", C_SYS, nullptr, OFFON, 0,
+        "Sube el reloj de CPU con appletSetCpuBoostMode mientras juegas.", false},
+    {"state_slot", "Ranura de estado rápido", C_SYS, nullptr,
+        {{"0","0"},{"1","1"},{"2","2"},{"3","3"},{"4","4"},{"5","5"},{"6","6"},{"7","7"},{"8","8"},{"9","9"}}, 0, "", false},
+    };
+}
+
+std::vector<std::string> Config::categories() const {
+    std::vector<std::string> out;
+    for (auto& d : defs_) {
+        bool found = false;
+        for (auto& c : out) if (c == d.category) found = true;
+        if (!found) out.push_back(d.category);
+    }
+    return out;
+}
+
+const OptionDef* Config::find(const char* id) const {
+    for (auto& d : defs_) if (!strcmp(d.id, id)) return &d;
+    return nullptr;
+}
+
+int Config::index(const char* id) const {
+    const OptionDef* d = find(id);
+    if (!d) return 0;
+    auto g = game_.find(id);
+    if (hasGame() && g != game_.end()) return g->second;
+    auto it = global_.find(id);
+    return it != global_.end() ? it->second : d->defIndex;
+}
+
+const char* Config::value(const char* id) const {
+    const OptionDef* d = find(id);
+    return d ? d->choices[index(id)].value : "";
+}
+
+bool Config::isOverridden(const char* id) const { return hasGame() && game_.count(id); }
+
+void Config::setIndex(const char* id, int idx) {
+    const OptionDef* d = find(id);
+    if (!d || idx < 0 || idx >= (int)d->choices.size()) return;
+    if (editScope == Scope::Game && hasGame()) game_[id] = idx; else global_[id] = idx;
+    if (d->coreKey) coreDirty_ = true; else feDirty_ = true;
+}
+
+const char* Config::coreValue(const char* coreKey) const {
+    for (auto& d : defs_)
+        if (d.coreKey && !strcmp(d.coreKey, coreKey)) return d.choices[index(d.id)].value;
+    return nullptr;
+}
+
+void Config::parseIni(const std::string& path, std::map<std::string, int>& out) {
+    out.clear();
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return;
+    char line[512];
+    while (fgets(line, sizeof line, f)) {
+        if (line[0] == '#' || line[0] == ';' || line[0] == '[') continue;
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq = 0;
+        std::string key = line, val = eq + 1;
+        auto trim = [](std::string& s) {
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ' || s.back() == '"')) s.pop_back();
+            while (!s.empty() && (s.front() == ' ' || s.front() == '"')) s.erase(0, 1);
+        };
+        trim(key); trim(val);
+        const OptionDef* d = find(key.c_str());
+        if (!d) continue;
+        for (size_t i = 0; i < d->choices.size(); i++)
+            if (val == d->choices[i].value) out[key] = (int)i;
+    }
+    fclose(f);
+}
+
+void Config::writeIni(const std::string& path, const std::map<std::string, int>& m, bool full) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "# PSX-K2 configuración%s\n", full ? " global" : " por juego (solo overrides)");
+    std::string cat;
+    for (auto& d : defs_) {
+        auto it = m.find(d.id);
+        if (!full && it == m.end()) continue;
+        if (cat != d.category) { cat = d.category; fprintf(f, "\n[%s]\n", cat.c_str()); }
+        int idx = it != m.end() ? it->second : d.defIndex;
+        fprintf(f, "%s = \"%s\"\n", d.id, d.choices[idx].value);
+    }
+    fclose(f);
+}
+
+void Config::loadGlobal() { parseIni(paths::config + "/psx-k2.ini", global_); coreDirty_ = feDirty_ = true; }
+void Config::saveGlobal() { writeIni(paths::config + "/psx-k2.ini", global_, true); }
+
+void Config::loadGame(const std::string& gameStem) {
+    gameStem_ = gameStem;
+    parseIni(paths::gameConfigs + "/" + gameStem + ".ini", game_);
+    coreDirty_ = feDirty_ = true;
+}
+void Config::saveGame() {
+    if (!hasGame()) return;
+    std::string p = paths::gameConfigs + "/" + gameStem_ + ".ini";
+    if (game_.empty()) remove(p.c_str()); else writeIni(p, game_, false);
+}
+void Config::clearGame() { game_.clear(); saveGame(); coreDirty_ = feDirty_ = true; }
+void Config::unloadGame() { gameStem_.clear(); game_.clear(); editScope = Scope::Global; coreDirty_ = feDirty_ = true; }
