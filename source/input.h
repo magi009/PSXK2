@@ -31,6 +31,7 @@ private:
     bool minusCombo_ = false;
     bool quit_ = false;
     u64 comboStart_ = 0;
+    u32 lastStyle_[2] = {0xFFFFFFFF, 0xFFFFFFFF};
     HidVibrationDeviceHandle vib_[2][2];
     float vibLo_[2] = {}, vibHi_[2] = {};
 };

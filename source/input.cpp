@@ -2,9 +2,12 @@
 #include "config.h"
 #include <libretro.h>
 #include <cstring>
+#include "log.h"
 
 void Input::init() {
-    padConfigureInput(2, HidNpadStyleSet_NpadStandard);
+    // Switch 2: los Joy-Con 2 (y el Pro Controller 2) llegan como NpadSystemExt a apps que no declaran
+    // sus estilos propios; libounce los lee por esa vía. Sin este bit no hay mandos en absoluto.
+    padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
     padInitialize(&pads_[0], HidNpadIdType_No1, HidNpadIdType_Handheld);
     padInitialize(&pads_[1], HidNpadIdType_No2);
     hidInitializeVibrationDevices(vib_[0], 2, HidNpadIdType_No1, (HidNpadStyleTag)(HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual));
@@ -14,6 +17,14 @@ void Input::init() {
 void Input::update() {
     padUpdate(&pads_[0]);
     padUpdate(&pads_[1]);
+    // Registro: estilo de cada mando cuando cambia (para diagnosticar mandos no detectados)
+    for (int i = 0; i < 2; i++) {
+        u32 st = padGetStyleSet(&pads_[i]);
+        if (st != lastStyle_[i]) {
+            LOGI("[input] jugador %d: estilo de mando 0x%x%s", i + 1, st, padIsConnected(&pads_[i]) ? " (conectado)" : " (sin mando)");
+            lastStyle_[i] = st;
+        }
+    }
     u64 h = padGetButtons(&pads_[0]);
     u64 d = padGetButtonsDown(&pads_[0]);
     hotkey_ = Hotkey::None;
