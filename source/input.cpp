@@ -29,6 +29,14 @@ void Input::update() {
     } else {
         minusCombo_ = false;
     }
+    // Salida de emergencia: − y + mantenidos 2 segundos
+    if ((h & HidNpadButton_Minus) && (h & HidNpadButton_Plus)) {
+        u64 now = armGetSystemTick();
+        if (!comboStart_) comboStart_ = now;
+        else if (armTicksToNs(now - comboStart_) >= 2000000000ULL) quit_ = true;
+    } else {
+        comboStart_ = 0;
+    }
 }
 
 int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id) const {

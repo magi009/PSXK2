@@ -32,6 +32,7 @@ int main(int, char**) {
 
     while (appletMainLoop() && !menu.quit) {
         input.update();
+        if (input.quitRequested()) { LOGI("salida de emergencia (− + + 2 s)"); break; }
 
         // Cambio portátil <-> dock o de opciones del frontend
         AppletOperationMode mode = appletGetOperationMode();

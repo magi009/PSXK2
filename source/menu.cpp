@@ -201,6 +201,7 @@ void Menu::drawInfo() {
     ImGui::BulletText("R   guardar estado      L   cargar estado");
     ImGui::BulletText("ZR  avance rápido (mantener)");
     ImGui::BulletText("Y   captura de pantalla     X   siguiente disco");
+    ImGui::BulletText("+ mantenido 2 s   salir al hbmenu (emergencia)");
     ImGui::Separator();
     ImGui::Text("Carpetas:");
     ImGui::BulletText("BIOS: %s", paths::bios.c_str());

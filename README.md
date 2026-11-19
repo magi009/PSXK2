@@ -56,6 +56,7 @@ Pon un `icon.jpg` (256x256) en la raíz del proyecto si quieres icono en el Home
 
 - Con kaiHEN activo, abre un juego de Switch 2 manteniendo **R** para entrar al Homebrew Menu y lanza PSX-K2.
 - Atajos en juego (mantén **−**): **+** menú · **R** guardar estado · **L** cargar estado · **ZR** avance rápido · **Y** captura · **X** siguiente disco.
+- **Salida de emergencia:** mantén **− y +** durante 2 segundos: guarda la memory card y vuelve al hbmenu, aunque no se vea nada en pantalla.
 - Menú: cruceta/stick para moverte, **A** confirmar, **B** volver, **L/R** pestañas, **ZL/ZR** categorías de configuración, izquierda/derecha para cambiar valores.
 
 ## Ajustes recomendados para juegos 3D (p. ej. Resident Evil 2)
