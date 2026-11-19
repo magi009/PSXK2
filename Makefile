@@ -35,8 +35,9 @@ ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # libbeetlepsx.a la genera setup.sh (núcleo libretro estático: Vulkan + OpenGL, PGXP, CHD)
-# -lnx enlaza libounce; -lvulkan y -lEGL vienen de OunceVK
-LIBS    := -lbeetlepsx -lglad -lvulkan -lEGL -lz -lnx -lm -lstdc++
+# -lnx enlaza libounce; -lEGL (libouncevk-gl) trae EGL/OpenGL y también Vulkan completo:
+# no se enlaza además -lvulkan (libouncevk) porque duplicaría el driver
+LIBS    := -lbeetlepsx -lglad -lEGL -lz -lnx -lm -lstdc++
 LIBDIRS := $(PORTLIBS) $(DEVKITPRO)/libounce $(TOPDIR)/third_party/lib
 
 #---------------------------------------------------------------------------------
