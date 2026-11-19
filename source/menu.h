@@ -26,6 +26,7 @@ public:
     std::string pendingRom;
     bool pendingUnload = false;
     bool pendingReset = false;
+    bool turbo = false;           // avance rápido x3 fijado desde el menú
     void onGameLoaded(const std::string& rom);
     void setError(const std::string& e) { error_ = e; }
 
@@ -74,6 +75,7 @@ private:
     float touchX_ = 0, touchY_ = 0, startX_ = 0, startY_ = 0, dragDY_ = 0, holdTime_ = 0;
     unsigned scrollClaim_ = 0, nextClaim_ = 0;
     float scrollVel_ = 0;
+    bool sidebarFocused_ = false, refocusContent_ = true;
 
     // Opciones del juego (mantener pulsado / X)
     bool gameOptsOpen_ = false;

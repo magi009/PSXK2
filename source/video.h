@@ -71,7 +71,7 @@ private:
     unsigned fboW_ = 0, fboH_ = 0;
     GLuint swTex_ = 0; unsigned swW_ = 0, swH_ = 0;
     GLuint vao_ = 0;
-    GLuint progs_[5] = {};
+    GLuint progs_[6] = {};
     float coreAspect_ = 4.0f / 3.0f;
 
     enum { LAST_NONE, LAST_HW, LAST_SW } last_ = LAST_NONE;

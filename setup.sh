@@ -87,4 +87,11 @@ if [ ! -d third_party/stb ]; then
   git clone --depth 1 https://github.com/nothings/stb.git third_party/stb
 fi
 
+# 4) Shaders de antialiasing (GLSL -> SPIR-V embebido en cabeceras)
+command -v glslangValidator >/dev/null || { echo "Falta glslangValidator (apt install glslang-tools)"; exit 1; }
+mkdir -p third_party/gen
+glslangValidator -V --vn spv_fullscreen_vert -o third_party/gen/spv_fullscreen_vert.h shaders/fullscreen.vert
+glslangValidator -V --vn spv_present_frag   -o third_party/gen/spv_present_frag.h   shaders/present.frag
+glslangValidator -V --vn spv_taa_frag       -o third_party/gen/spv_taa_frag.h       shaders/taa.frag
+
 echo "Listo. Ahora ejecuta: make dist"

@@ -81,7 +81,7 @@ R"(void main(){
     c += texture(uTex, vec2(t3.x,  t3.y)).rgb  * w3.x  * w3.y;
     frag = vec4(clamp(c, 0.0, 1.0), 1.0);
 })",
-// 4 CRT scanlines + máscara de apertura simple
+// 4 CRT scanlines + máscara de apertura simple (la variante 5, FXAA, va al final)
 R"(void main(){
     vec2 uv = srcUV();
     vec3 c = texture(uTex, uv).rgb;
@@ -94,6 +94,25 @@ R"(void main(){
 })",
 };
 
+// 5 FXAA (versión de consola de Timothy Lottes) en espacio de la imagen de origen
+static const char* kFSFxaa = R"(
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main(){
+    vec2 uv = srcUV(); vec2 r = 1.0 / uTexSize;
+    vec3 nw = texture(uTex, uv + vec2(-1,-1) * r).rgb, ne = texture(uTex, uv + vec2(1,-1) * r).rgb;
+    vec3 sw = texture(uTex, uv + vec2(-1, 1) * r).rgb, se = texture(uTex, uv + vec2(1, 1) * r).rgb;
+    vec3 m = texture(uTex, uv).rgb;
+    float a = lum(nw), b = lum(ne), c = lum(sw), d = lum(se), e = lum(m);
+    float mn = min(e, min(min(a, b), min(c, d))), mx = max(e, max(max(a, b), max(c, d)));
+    vec2 dir = vec2(-((a + b) - (c + d)), ((a + c) - (b + d)));
+    float red = max((a + b + c + d) * 0.03125, 1.0 / 128.0);
+    dir = clamp(dir / (min(abs(dir.x), abs(dir.y)) + red), vec2(-8.0), vec2(8.0)) * r;
+    vec3 A = 0.5 * (texture(uTex, uv + dir * (1.0/3.0 - 0.5)).rgb + texture(uTex, uv + dir * (2.0/3.0 - 0.5)).rgb);
+    vec3 B = A * 0.5 + 0.25 * (texture(uTex, uv - dir * 0.5).rgb + texture(uTex, uv + dir * 0.5).rgb);
+    float lb = lum(B);
+    frag = vec4((lb < mn || lb > mx) ? A : B, 1.0);
+})";
+
 static GLuint compile(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &src, nullptr);
@@ -105,8 +124,8 @@ static GLuint compile(GLenum type, const char* src) {
 
 void Video::buildShaders() {
     GLuint vs = compile(GL_VERTEX_SHADER, kVS);
-    for (int i = 0; i < 5; i++) {
-        std::string src = std::string(kFSHead) + kFS[i];
+    for (int i = 0; i < 6; i++) {
+        std::string src = std::string(kFSHead) + (i < 5 ? kFS[i] : kFSFxaa);
         GLuint fs = compile(GL_FRAGMENT_SHADER, src.c_str());
         progs_[i] = glCreateProgram();
         glAttachShader(progs_[i], vs); glAttachShader(progs_[i], fs);
@@ -257,6 +276,7 @@ void Video::draw(GLuint tex, unsigned w, unsigned h, unsigned texW, unsigned tex
     Config& c = Config::get();
     const char* sh = c.value("upscale_shader");
     int p = !strcmp(sh, "nearest") ? 0 : !strcmp(sh, "bilinear") ? 1 : !strcmp(sh, "sharp") ? 2 : !strcmp(sh, "bicubic") ? 3 : 4;
+    if (strcmp(c.value("aa_post"), "off")) p = 5;   // en OpenGL: FXAA (el TAA solo existe en Vulkan)
 
     computeViewport(w, h);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -291,7 +311,13 @@ void Video::draw(GLuint tex, unsigned w, unsigned h, unsigned texW, unsigned tex
 
 void Video::presentHw(unsigned w, unsigned h) {
     last_ = LAST_HW; lastW_ = w; lastH_ = h;
-    if (vk_) { computeViewport(w, h); vk_->presentCore(w, h, vpX_, vpY_, vpW_, vpH_, linearFilter()); return; }
+    if (vk_) {
+        const char* aa = Config::get().value("aa_post");
+        vk_->setAntialiasing(!strcmp(aa, "fxaa") || !strcmp(aa, "fxaa_taa"), !strcmp(aa, "taa") || !strcmp(aa, "fxaa_taa"));
+        computeViewport(w, h);
+        vk_->presentCore(w, h, vpX_, vpY_, vpW_, vpH_, linearFilter());
+        return;
+    }
     draw(fboTex_, w, h, fboW_, fboH_, false);   // el núcleo usa origen abajo-izquierda
 }
 

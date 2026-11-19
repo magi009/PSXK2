@@ -14,6 +14,7 @@ static const std::vector<OptionChoice> ONOFF = {{"Activado", "enabled"}, {"Desac
 #define C_MC      "Memory Cards"
 #define C_INPUT   "Controles"
 #define C_SYS     "Sistema"
+#define C_AA      "Antialiasing"
 
 static void assignFlags(std::vector<OptionDef>& defs);
 
@@ -53,9 +54,7 @@ Config::Config() {
          {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}}, 2,
         "Filtro que lleva la imagen renderizada al tamaño de pantalla. Con Vulkan, Sharp/Bicúbico/CRT usan "
         "bilineal por ahora (los shaders completos están en el backend OpenGL).", false},
-    {"msaa", "Antialiasing MSAA", C_VIDEO, "beetle_psx_hw_msaa",
-        {{"1x (off)", "1x"}, {"2x", "2x"}, {"4x", "4x"}, {"8x", "8x"}}, 0,
-        "Suaviza bordes de polígonos. Muy costoso junto a resolución alta.", false},
+
     {"depth", "Profundidad de color", C_VIDEO, "beetle_psx_hw_depth",
         {{"16 bpp (nativa)", "16bpp(native)"}, {"32 bpp (sin bandas)", "32bpp"}}, 1, "", false},
     {"dither", "Dithering", C_VIDEO, "beetle_psx_hw_dither_mode",
@@ -67,6 +66,19 @@ Config::Config() {
         {{"Desactivado", "disabled"}, {"Estático", "static"}, {"Inteligente", "smart"}}, 1, "", false},
     {"vsync", "VSync", C_VIDEO, nullptr, ONOFF, 0, "", false},
     {"show_fps", "Mostrar FPS", C_VIDEO, nullptr, OFFON, 0, "", false},
+
+    // ---------------------------------------------------------------- ANTIALIASING
+    {"aa_post", "Antialiasing de pantalla", C_AA, nullptr,
+        {{"Desactivado", "off"}, {"FXAA (rápido)", "fxaa"}, {"TAA temporal (estilo TXAA)", "taa"},
+         {"FXAA + TAA (máximo suavizado)", "fxaa_taa"}}, 0,
+        "FXAA suaviza los bordes de la imagen final casi sin coste. TAA mezcla cada frame con el anterior: "
+        "elimina el parpadeo de bordes y el temblor de los polígonos (TXAA real es una técnica de NVIDIA; esto es "
+        "su equivalente temporal). Combínalo con MSAA para el resultado más limpio. TAA requiere Vulkan.", false},
+    {"msaa", "MSAA (bordes de polígonos)", C_AA, "beetle_psx_hw_msaa",
+        {{"Desactivado", "1x"}, {"2x", "2x"}, {"4x (recomendado)", "4x"}, {"8x (muy exigente)", "8x"}}, 0,
+        "Suaviza los bordes de los polígonos 3D en origen. Al activarlo el primer arranque tarda más (se "
+        "compilan los shaders, que luego quedan guardados). 8x a resolución 4x u 8x puede bajar de 60 fps: la "
+        "protección de rendimiento lo reducirá antes que la resolución.", false},
 
     // ---------------------------------------------------------------- 3D / PGXP
     {"pgxp_mode", "PGXP (precisión geométrica)", C_3D, "beetle_psx_hw_pgxp_mode",

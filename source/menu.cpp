@@ -89,8 +89,8 @@ void Menu::applyStyle() {
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowPadding = ImVec2(0, 0);
-    st.FramePadding = ImVec2(18, 12);
-    st.ItemSpacing = ImVec2(14, 10);
+    st.FramePadding = ImVec2(22, 15);
+    st.ItemSpacing = ImVec2(18, 16);
     st.ItemInnerSpacing = ImVec2(10, 8);
     st.ScrollbarSize = 16;
     st.WindowRounding = 18; st.ChildRounding = 14; st.FrameRounding = 12; st.PopupRounding = 16;
@@ -202,7 +202,14 @@ void Menu::feedInput() {
         io.AddMouseButtonEvent(0, false);
         if (touchDown_) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);   // sin "hover" pegado tras soltar
     }
+    if (!down && !touchDown_) { cancelClick_ = false; longFired_ = false; }   // sin toque: estado limpio
     touchDown_ = down;
+    // Cualquier pulsación del mando vuelve a mostrar el foco (y lo devuelve al contenido)
+    if (input_.down() & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight |
+                         HidNpadButton_A | HidNpadButton_X)) {
+        ImGui::SetNavCursorVisible(true);
+        if (sidebarFocused_) refocusContent_ = true;
+    }
 
     u64 d = input_.down();
     if (!confirmOpen_ && !gameOptsOpen_) {
@@ -230,6 +237,13 @@ void Menu::touchScroll() {
     ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
     bool inside = startX_ >= wp.x && startX_ < wp.x + ws.x && startY_ >= wp.y && startY_ < wp.y + ws.y;
     if (touchDragging_ && inside && ImGui::GetScrollMaxY() > 0 && scrollClaim_ == 0) nextClaim_ = id;
+    // Stick derecho: desplaza la lista de la sección actual (velocidad proporcional a la inclinación)
+    HidAnalogStickState rs = input_.stick(0, 1);
+    float ry = rs.y / 32767.f;
+    if (fabsf(ry) > 0.18f) {
+        float sp = (fabsf(ry) - 0.18f) / 0.82f;
+        ImGui::SetScrollY(ImGui::GetScrollY() - (ry > 0 ? 1.f : -1.f) * sp * sp * 2200.f * scale_ * io.DeltaTime);
+    }
     if (id != scrollClaim_) return;
     if (touchDown_ && touchDragging_) {
         ImGui::SetScrollY(ImGui::GetScrollY() - dragDY_);
@@ -274,30 +288,40 @@ void Menu::drawHeader() {
 }
 
 void Menu::drawSidebar(float w) {
-    static const char* kNames[4] = {"Biblioteca", "Juego", "Ajustes", "Información"};
+    static const char* kNames[5] = {"Biblioteca", "Juego", "Ajustes", "Información", "Salir"};
     ImGui::PushStyleColor(ImGuiCol_ChildBg, C_PANEL);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 14));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14 * scale_, 18 * scale_));
     // Sin navegación por mando: las secciones se cambian con L/R (o tocando)
-    ImGui::BeginChild("side", ImVec2(w, 0), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoNavInputs);
+    ImGui::BeginChild("side", ImVec2(w, 0), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    float itemH = ImGui::GetFontSize() * 2.3f;
-    for (int i = 0; i < 4; i++) {
+    float itemH = ImGui::GetFontSize() * 2.5f;
+    for (int i = 0; i < 5; i++) {
+        bool exit = i == 4;
+        if (exit) ImGui::Dummy(ImVec2(0, 14 * scale_));     // separado del resto
         bool sel = tab_ == i;
         bool disabled = (i == 1 && !core_.loaded());
         ImVec2 p = ImGui::GetCursorScreenPos();
         float iw = ImGui::GetContentRegionAvail().x;
+        bool hov = ImGui::IsMouseHoveringRect(p, ImVec2(p.x + iw, p.y + itemH));
         if (sel) {
             dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_ACCENT, 0.28f), 12 * scale_);
             dl->AddRectFilled(p, ImVec2(p.x + 6 * scale_, p.y + itemH), col(C_ACCENT), 3 * scale_);
+        } else if (hov && !disabled) {
+            dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_PANEL2), 12 * scale_);
         }
         ImGui::PushID(i);
-        if (ImGui::InvisibleButton("tab", ImVec2(iw, itemH)) && !disabled) wantTab_ = i;
+        if (ImGui::InvisibleButton("tab", ImVec2(iw, itemH)) && !disabled) {
+            if (exit) { confirmOpen_ = true; confirmCat_ = "__salir__"; }
+            else wantTab_ = i;
+            refocusContent_ = true;
+        }
         ImGui::PopID();
         ImVec2 ts = ImGui::CalcTextSize(kNames[i]);
-        dl->AddText(ImVec2(p.x + 22 * scale_, p.y + (itemH - ts.y) * 0.5f),
-                    col(disabled ? C_MUTED : sel ? C_TEXT : ImVec4(0.75f, 0.78f, 0.85f, 1), disabled ? 0.5f : 1.f), kNames[i]);
-        ImGui::Dummy(ImVec2(0, 4 * scale_));
+        ImVec4 tc = exit ? ImVec4(1.f, 0.55f, 0.55f, 1) : disabled ? C_MUTED : sel ? C_TEXT : ImVec4(0.75f, 0.78f, 0.85f, 1);
+        dl->AddText(ImVec2(p.x + 24 * scale_, p.y + (itemH - ts.y) * 0.5f), col(tc, disabled ? 0.5f : 1.f), kNames[i]);
+        ImGui::Dummy(ImVec2(0, 6 * scale_));
     }
+    sidebarFocused_ = ImGui::IsWindowFocused();
     // Pie de la barra lateral
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFontSize() * 3.2f);
     ImGui::TextColored(C_MUTED, "%s  " G_L " " G_R, "Secciones");
@@ -311,7 +335,7 @@ void Menu::drawFooter() {
     std::string hints = G_A " Aceptar     " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
     if (tab_ == 0) hints += "     " G_X " Opciones (o mantén pulsado)";
     if (tab_ == 2) hints += "     " G_ZL " " G_ZR " Categoría     ◀ ▶ Cambiar";
-    hints += "     " G_L " " G_R " Secciones";
+    hints += "     " G_L " " G_R " Secciones     Stick dcho. Desplazar";
     if (core_.loaded()) hints += "     " G_MINUS " + " G_PLUS " Menú";
     ImGui::TextColored(C_MUTED, "%s", hints.c_str());
 }
@@ -374,15 +398,22 @@ void Menu::drawLibrary() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImGuiIO& io = ImGui::GetIO();
     u64 d = input_.down();
-    int cols = grid ? 5 : 1;
-    float gap = 18 * scale_;
+    int cols = grid ? 4 : 1;               // 4 por fila: más aire y portadas más grandes
+    float gap = 28 * scale_;
     float availW = ImGui::GetContentRegionAvail().x;
     float cardW = grid ? (availW - gap * (cols - 1)) / cols : availW;
     float coverH = grid ? cardW : ImGui::GetFontSize() * 2.6f;
-    float cardH = grid ? coverH + ImGui::GetFontSize() * 2.7f : coverH;
+    float cardH = coverH;
     for (size_t i = 0; i < roms_.size(); i++) {
         const std::string& r = roms_[i];
         std::string name = paths::stem(r);
+        // Cuadrícula: la fila crece lo necesario para mostrar el nombre COMPLETO del juego más largo
+        if (grid && i % cols == 0) {
+            float th = 0;
+            for (size_t k = i; k < roms_.size() && k < i + cols; k++)
+                th = std::max(th, ImGui::CalcTextSize(paths::stem(roms_[k]).c_str(), nullptr, false, cardW - 8 * scale_).y);
+            cardH = coverH + th + 22 * scale_;
+        }
         ImGui::PushID((int)i);
         if (grid && i % cols) ImGui::SameLine(0, gap);
         ImVec2 p = ImGui::GetCursorScreenPos();
@@ -433,11 +464,9 @@ void Menu::drawLibrary() {
                 ImVec2 b0(p.x + 10 * scale_, p.y + 10 * scale_);
                 dl->AddRectFilled(b0, ImVec2(b0.x + es.x + 16 * scale_, b0.y + es.y + 6 * scale_), col(ImVec4(0, 0, 0, 0.6f)), 8 * scale_);
                 dl->AddText(ImVec2(b0.x + 8 * scale_, b0.y + 3 * scale_), col(C_TEXT), ext.c_str());
-                // Título (2 líneas como máximo)
-                ImGui::PushClipRect(ImVec2(p.x, p.y + coverH), ImVec2(p.x + cardW, p.y + cardH), true);
-                dl->AddText(nullptr, 0.f, ImVec2(p.x + 4 * scale_, p.y + coverH + 8 * scale_), col(focused ? C_TEXT : ImVec4(0.80f, 0.83f, 0.90f, 1)),
+                // Título completo (la altura de la fila ya se ajustó a él)
+                dl->AddText(nullptr, 0.f, ImVec2(p.x + 4 * scale_, p.y + coverH + 10 * scale_), col(focused ? C_TEXT : ImVec4(0.80f, 0.83f, 0.90f, 1)),
                             name.c_str(), nullptr, cardW - 8 * scale_);
-                ImGui::PopClipRect();
             } else {
                 dl->AddRectFilled(p, ImVec2(p.x + cardW, p.y + cardH), col(focused ? C_PANEL2 : C_PANEL), 12 * scale_);
                 float asp = 1.f;
@@ -521,6 +550,15 @@ void Menu::drawGame() {
     char buf[96];
 
     if (BigButton("Continuar", C_ACCENT, W, bh * 1.15f)) open = false;
+    // Velocidad: normal (Play) o avance rápido x3, uno al lado del otro
+    if (BigButton("\u25B6  Velocidad normal", turbo ? C_PANEL2 : ImVec4(0.18f, 0.45f, 0.32f, 1), half, bh)) {
+        turbo = false; toast("Velocidad normal"); open = false;
+    }
+    ImGui::SameLine();
+    if (BigButton("\u25B6\u25B6  Avance rápido x3", turbo ? ImVec4(0.18f, 0.45f, 0.32f, 1) : C_PANEL2, half, bh)) {
+        turbo = true; toast("Avance rápido x3"); open = false;
+    }
+    ImGui::Dummy(ImVec2(0, 6 * scale_));
     if (BigButton("Reiniciar", C_PANEL2, half, bh)) { pendingReset = true; open = false; }
     ImGui::SameLine();
     if (BigButton("Captura de pantalla", C_PANEL2, half, bh)) { open = false; screenshotRequested = true; }
@@ -549,7 +587,7 @@ void Menu::drawGame() {
     if (BigButton("Guardar memory card ahora", C_PANEL2, half, bh)) { core_.flushMemcard(true); toast("Memory card guardada"); }
     ImGui::SameLine();
     if (BigButton("Cerrar juego", ImVec4(C_DANGER.x * 0.7f, C_DANGER.y * 0.7f, C_DANGER.z * 0.7f, 1), half, bh)) {
-        pendingUnload = true; wantTab_ = 0;
+        pendingUnload = true; wantTab_ = 0; turbo = false;
     }
 }
 
@@ -602,7 +640,7 @@ void Menu::drawSettings() {
     touchScroll();
     help_ = "";
     ImGuiIO& io = ImGui::GetIO();
-    float rowH = ImGui::GetFontSize() * 2.1f;
+    float rowH = ImGui::GetFontSize() * 2.6f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     for (auto& o : c.defs()) {
         if (cats[cat_] != o.category) continue;
@@ -660,11 +698,14 @@ void Menu::drawConfirm() {
     if (ImGui::BeginPopupModal("confirm", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
         Config& c = Config::get();
         bool game = core_.loaded() && c.editScope == Scope::Game;
+        bool exitApp = confirmCat_ == "__salir__";
         ImGui::PushFont(fontTitle_);
-        ImGui::Text("%s", confirmCat_.empty() ? "¿Restaurar todos los ajustes?" : ("¿Restaurar " + confirmCat_ + "?").c_str());
+        if (exitApp) ImGui::Text("¿Salir de PSX-K2?");
+        else ImGui::Text("%s", confirmCat_.empty() ? "¿Restaurar todos los ajustes?" : ("¿Restaurar " + confirmCat_ + "?").c_str());
         ImGui::PopFont();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextColored(C_MUTED, "%s", game ? "Se borrarán los ajustes propios de este juego y volverá a usar los globales."
+        ImGui::TextColored(C_MUTED, "%s", exitApp ? "Se guardará la memory card y volverás al menú de homebrew."
+                                        : game ? "Se borrarán los ajustes propios de este juego y volverá a usar los globales."
                                                : "Todas las opciones volverán a sus valores recomendados.");
         ImGui::PopTextWrapPos();
         ImGui::Dummy(ImVec2(0, 8 * scale_));
@@ -673,7 +714,9 @@ void Menu::drawConfirm() {
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         if (BigButton("Cancelar", C_PANEL2, w, 0)) cancel = true;
         ImGui::SameLine();
-        if (BigButton("Restaurar", C_DANGER, w, 0)) {
+        if (exitApp) {
+            if (BigButton("Salir", C_DANGER, w, 0)) { quit = true; cancel = true; }
+        } else if (BigButton("Restaurar", C_DANGER, w, 0)) {
             c.resetCategory(confirmCat_.empty() ? nullptr : confirmCat_.c_str());
             toast(confirmCat_.empty() ? "Ajustes restaurados" : confirmCat_ + " restaurado");
             cancel = true;
@@ -686,7 +729,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.4.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.5.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
     BeginCard("keys", ImGui::GetFontSize() * 9.2f);
@@ -706,8 +749,7 @@ void Menu::drawInfo() {
     ImGui::TextColored(C_MUTED, "Estados"); ImGui::SameLine(200 * scale_); ImGui::Text("%s", paths::states.c_str());
     ImGui::TextColored(C_MUTED, "Capturas"); ImGui::SameLine(200 * scale_); ImGui::Text("%s", paths::screenshots.c_str());
     EndCard();
-    ImGui::Dummy(ImVec2(0, 6 * scale_));
-    if (BigButton("Salir del emulador", ImVec4(C_DANGER.x * 0.7f, C_DANGER.y * 0.7f, C_DANGER.z * 0.7f, 1), 0, 0)) quit = true;
+
 }
 
 // ------------------------------------------------------------------ frame
@@ -756,6 +798,7 @@ void Menu::draw() {
     float te = easeOut(tabAnim_);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, e * (0.35f + 0.65f * te));
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (1.f - te) * 24 * scale_);
+    if (refocusContent_ || sidebarFocused_) { ImGui::SetNextWindowFocus(); refocusContent_ = false; }
     ImGui::BeginChild("content", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollWithMouse);
     if (tab_ != 0 && tab_ != 2) touchScroll();
     if (tab_ == 0) drawLibrary(); else if (tab_ == 1) drawGame(); else if (tab_ == 2) drawSettings(); else drawInfo();
@@ -783,7 +826,7 @@ void Menu::draw() {
 void Menu::drawOsd() {
     Config& c = Config::get();
     bool exclusive = !strcmp(c.value("screen_mode"), "exclusive");   // exclusiva: sin superposiciones
-    bool fps = c.isOn("show_fps") && !exclusive;
+    bool fps = (c.isOn("show_fps") || turbo) && !exclusive;
     bool t = !exclusive && !toast_.empty() && armGetSystemTick() < toastUntil_;
     if (!fps && !t && !video_.isVulkan()) return;   // en Vulkan el juego se dibuja con este mismo pase
     ImGuiIO& io = ImGui::GetIO();
@@ -795,7 +838,9 @@ void Menu::drawOsd() {
     video_.addGameLayer();
     ImGui::PushFont(fontBody_);
     if (fps) {
-        char b[32]; snprintf(b, sizeof b, "%.0f FPS", core_.fps());
+        char b[48];
+        if (turbo) snprintf(b, sizeof b, "\u25B6\u25B6 x3   %.0f FPS", core_.fps());
+        else snprintf(b, sizeof b, "%.0f FPS", core_.fps());
         ImVec2 ts = ImGui::CalcTextSize(b);
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         ImVec2 p1(io.DisplaySize.x - 20 * scale_, 20 * scale_ + ts.y + 16 * scale_);

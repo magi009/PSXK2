@@ -148,6 +148,7 @@ void VkPresenter::destroyDeviceObjects() {
     if (!dev_) return;
     vkDeviceWaitIdle(dev_);
     destroyUserTextures();
+    destroyPost();
     imguiShutdown();
     destroySwapchain();
     for (uint32_t i = 0; i < kFrames; i++) {
@@ -370,7 +371,8 @@ void VkPresenter::beginFrame() {
     vkBeginCommandBuffer(cmd_[frame_], &bi);
     swapLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
     coreCmds_.clear(); coreWait_.clear(); coreSignal_ = VK_NULL_HANDLE;
-    pendingGame_ = false;
+    pendingGame_ = false; pendingPost_ = false; uiRendered_ = false;
+    if (postPool_[frame_]) vkResetDescriptorPool(dev_, postPool_[frame_], 0);   // la fence de este índice ya se esperó
     inFrame_ = true;
 }
 
@@ -409,6 +411,21 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
            hasCoreImg_ ? "sí" : "NO");
     clearTarget();
     if (!hasCoreImg_ || !uiReady_) return;
+    // Camino principal: pipeline propio (FXAA / TAA). El de ImGui queda solo como respaldo.
+    if (ensurePost()) {
+        VkImageView src = coreImg_.image_view;
+        VkImageLayout lay = coreImg_.image_layout;
+        bool fx = aaFxaa_;
+        if (aaTaa_ && ensureHistory(w, h)) {
+            recordTaa(src, lay, w, h, fx);
+            src = hist_[histCur_ ^ 1].view;            // la que se acaba de escribir
+            lay = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            fx = false;
+        }
+        post_ = {src, lay, linear, fx, {1.f / w, 1.f / h}, vx, vy, vw, vh};
+        pendingPost_ = true;
+        return;
+    }
     // Descriptor (sampler + vista) cacheado por vista de imagen
     VkImageView view = coreImg_.image_view;
     VkImageLayout layout = coreImg_.image_layout;
@@ -548,7 +565,7 @@ void VkPresenter::collectTextures() {
 }
 
 void VkPresenter::addGameLayer() {
-    if (!pendingGame_) return;
+    if (!pendingGame_ || pendingPost_) return;   // con posprocesado el juego lo dibuja su pipeline
     // Se dibuja al fondo; el menú y el OSD quedan encima
     ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)pendingSet_,
         ImVec2(pendingRect_[0], pendingRect_[1]), ImVec2(pendingRect_[2], pendingRect_[3]));
@@ -594,6 +611,7 @@ void VkPresenter::presentSw(const void* data, unsigned w, unsigned h, size_t pit
 
 void VkPresenter::endFrame() {
     if (!inFrame_) return;
+    if (pendingPost_ && !uiRendered_ && acquiredOk_) { beginUiPass(); endUiPass(); }   // frame sin interfaz
     if (swapLayout_ == VK_IMAGE_LAYOUT_UNDEFINED) clearTarget();
     if (acquiredOk_ && swapLayout_ != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
         transition(images_[imageIdx_], swapLayout_, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
@@ -630,6 +648,7 @@ void VkPresenter::endFrame() {
     frame_ = (frame_ + 1) % kFrames;
     frameCount_++;
     if (uiReady_) collectTextures();
+    collectHistory();
     inFrame_ = false;
 }
 
@@ -676,14 +695,8 @@ void VkPresenter::imguiNewFrame() { ImGui_ImplVulkan_NewFrame(); }
 void VkPresenter::imguiRender(ImDrawData* dd) {
     if (!acquiredOk_ || !inFrame_) return;
     VKDIAG("[vk] imguiRender: listas=%d vértices=%d juego=%s", dd->CmdListsCount, dd->TotalVtxCount, pendingGame_ ? "sí" : "no");
-    if (swapLayout_ == VK_IMAGE_LAYOUT_UNDEFINED) clearTarget();
-    transition(images_[imageIdx_], swapLayout_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
-               VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    VkRenderPassBeginInfo rb = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    rb.renderPass = uiPass_; rb.framebuffer = fbs_[imageIdx_]; rb.renderArea.extent = extent_;
-    vkCmdBeginRenderPass(cmd_[frame_], &rb, VK_SUBPASS_CONTENTS_INLINE);
+    if (uiRendered_) return;
+    beginUiPass();                       // dibuja también el juego (posprocesado) antes de la interfaz
     ImGui_ImplVulkan_RenderDrawData(dd, cmd_[frame_]);
-    vkCmdEndRenderPass(cmd_[frame_]);
-    swapLayout_ = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    endUiPass();
 }

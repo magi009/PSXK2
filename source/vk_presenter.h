@@ -39,7 +39,9 @@ public:
     void imguiNewFrame();
     void imguiRender(ImDrawData* dd);
 
-    void resetCore() { hasCoreImg_ = false; }
+    void resetCore() { hasCoreImg_ = false; histValid_ = false; }
+    // Antialiasing de posprocesado: FXAA y/o TAA (temporal). El MSAA lo hace el núcleo.
+    void setAntialiasing(bool fxaa, bool taa) { if (taa != aaTaa_) histValid_ = false; aaFxaa_ = fxaa; aaTaa_ = taa; }
     // Negociación libretro: el núcleo crea el VkDevice (Beetle lo exige) y lo adoptamos
     bool adoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg);
     void releaseCoreDevice();   // tras context_destroy: vuelve al dispositivo propio
@@ -123,6 +125,34 @@ private:
     std::vector<UserTex> userTex_, userTexGrave_;
     unsigned gen_ = 1;
     void destroyUserTextures();
+
+    // ---- Posprocesado (vk_post.cpp)
+    bool ensurePost();
+    void destroyPost();
+    bool ensureHistory(uint32_t w, uint32_t h);
+    void recordTaa(VkImageView cur, VkImageLayout curLayout, uint32_t w, uint32_t h, bool fxaa);
+    VkDescriptorSet allocPostSet(VkImageView a, VkImageLayout la, VkImageView b, VkImageLayout lb, VkSampler s);
+    void drawPendingGame();
+    void beginUiPass();
+    void endUiPass();
+    void collectHistory();
+    bool aaFxaa_ = false, aaTaa_ = false;
+    bool postReady_ = false, postFailed_ = false, uiRendered_ = false;
+    VkDescriptorSetLayout postDsl_ = VK_NULL_HANDLE;
+    VkPipelineLayout postLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool postPool_[2] = {};
+    VkRenderPass histPass_ = VK_NULL_HANDLE, postForPass_ = VK_NULL_HANDLE;
+    VkPipeline pipePresent_ = VK_NULL_HANDLE, pipeTaa_ = VK_NULL_HANDLE;
+    VkShaderModule vsMod_ = VK_NULL_HANDLE, fsPresent_ = VK_NULL_HANDLE, fsTaa_ = VK_NULL_HANDLE;
+    struct Hist { VkImage img; VkDeviceMemory mem; VkImageView view; VkFramebuffer fb; uint64_t freeAt; };
+    Hist hist_[2] = {};
+    std::vector<Hist> histGrave_;
+    uint32_t histW_ = 0, histH_ = 0;
+    int histCur_ = 0;
+    bool histValid_ = false;
+    struct PendingPost { VkImageView view; VkImageLayout layout; bool linear; bool fxaa; float rcp[2]; int vx, vy, vw, vh; };
+    PendingPost post_ = {};
+    bool pendingPost_ = false;
 
     // Frames por software
     VkBuffer stage_[kFrames] = {};

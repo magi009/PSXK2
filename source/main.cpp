@@ -91,21 +91,29 @@ int main(int, char**) {
         }
         // Protección de rendimiento: si el juego no aguanta 57 fps durante 3 s seguidos, baja un nivel
         // la resolución interna de ESTE juego. Se ignoran los primeros 15 s (compilación de shaders).
-        if (core.loaded() && !menu.open && !input.fastForward() && core.fpsSerial() != lastFpsSerial) {
+        if (core.loaded() && !menu.open && !input.fastForward() && !menu.turbo && core.fpsSerial() != lastFpsSerial) {
             lastFpsSerial = core.fpsSerial();
             double t = core.secondsSinceLoad();
             slowSeconds = (t > 15 && core.fps() < 57.f) ? slowSeconds + 1 : 0;
             const char* guard = cfg.value("perf_guard");
             if (slowSeconds >= 3 && strcmp(guard, "off") && t - lastGuardAction > 10) {
                 lastGuardAction = t; slowSeconds = 0;
-                int res = cfg.index("internal_res");
-                if (!strcmp(guard, "auto") && res > 0) {
+                int res = cfg.index("internal_res"), msaa = cfg.index("msaa");
+                bool vk = !strcmp(cfg.value("renderer"), "hardware_vk");
+                if (!strcmp(guard, "auto") && ((vk && msaa > 0) || res > 0)) {
                     Scope prev = cfg.editScope;
                     cfg.editScope = Scope::Game;
-                    cfg.setIndex("internal_res", res - 1);
+                    if (vk && msaa > 0) {              // el MSAA es lo más caro: se baja primero
+                        cfg.setIndex("msaa", msaa - 1);
+                        LOGI("[perf] %.1f fps: MSAA %d -> %d", core.fps(), msaa, msaa - 1);
+                        menu.toast(msaa - 1 ? "Rendimiento: MSAA bajado a " + std::to_string(1 << (msaa - 1)) + "x"
+                                            : std::string("Rendimiento: MSAA desactivado"));
+                    } else {
+                        cfg.setIndex("internal_res", res - 1);
+                        LOGI("[perf] %.1f fps: resolución interna %d -> %d", core.fps(), res, res - 1);
+                        menu.toast("Rendimiento: resolución interna bajada a " + std::to_string(1 << (res - 1)) + "x");
+                    }
                     cfg.editScope = prev;
-                    LOGI("[perf] %.1f fps: resolución interna %d -> %d", core.fps(), res, res - 1);
-                    menu.toast("Rendimiento: resolución interna bajada a " + std::to_string(1 << (res - 1)) + "x");
                 } else {
                     menu.toast("Rendimiento bajo (" + std::to_string((int)core.fps()) + " fps): baja la resolución o el MSAA");
                 }
@@ -115,7 +123,7 @@ int main(int, char**) {
         if (menu.screenshotRequested) { shotPending = true; menu.screenshotRequested = false; }
 
         if (core.loaded() && !menu.open) {
-            core.runFrame(input.fastForward());
+            core.runFrame(input.fastForward() || menu.turbo);
             if (shotPending) {               // se captura antes de dibujar el OSD
                 std::string p;
                 menu.toast(core.takeScreenshot(p) ? "Captura guardada" : "Error en captura");

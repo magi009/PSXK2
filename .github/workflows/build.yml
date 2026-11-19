@@ -19,7 +19,7 @@ jobs:
 
       - name: Herramientas
         run: |
-          apt-get update && apt-get install -y --no-install-recommends git curl zip ca-certificates python3
+          apt-get update && apt-get install -y --no-install-recommends git curl zip ca-certificates python3 glslang-tools
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Dependencias (ounce-devkit, Beetle PSX HW, ImGui)
