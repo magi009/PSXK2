@@ -7,8 +7,8 @@ void Input::init() {
     padConfigureInput(2, HidNpadStyleSet_NpadStandard);
     padInitialize(&pads_[0], HidNpadIdType_No1, HidNpadIdType_Handheld);
     padInitialize(&pads_[1], HidNpadIdType_No2);
-    hidInitializeVibrationDevices(vib_[0], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual);
-    hidInitializeVibrationDevices(vib_[1], 2, HidNpadIdType_No2, HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual);
+    hidInitializeVibrationDevices(vib_[0], 2, HidNpadIdType_No1, (HidNpadStyleTag)(HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual));
+    hidInitializeVibrationDevices(vib_[1], 2, HidNpadIdType_No2, (HidNpadStyleTag)(HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual));
 }
 
 void Input::update() {
