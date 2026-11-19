@@ -12,9 +12,16 @@ if [ ! -f "$DEVKITPRO/libounce/switch2_rules" ]; then
   curl -fsSLO https://pkg.ouncebrew.org/ounce.gpg
   $SUDO dkp-pacman-key --add ounce.gpg
   $SUDO dkp-pacman-key --lsign-key DFEAE7FA965D1E6C0D41D4D75DB9FDBFA4A4DE29
-  grep -q '^\[ounce\]' "$DEVKITPRO/pacman/etc/pacman.conf" || \
-    printf '\n[ounce]\nServer = https://pkg.ouncebrew.org\n' | $SUDO tee -a "$DEVKITPRO/pacman/etc/pacman.conf"
-  $SUDO dkp-pacman -Sy --noconfirm --needed switch-glad switch-zlib libounce ouncevk libkaihen
+  # Solo sincronizamos [ounce]: los paquetes de devkitPro ya vienen en su imagen/instalación
+  # (y pkg.devkitpro.org a veces rechaza a los servidores de CI con 403)
+  CONF="$DEVKITPRO/pacman/etc/pacman.conf"
+  awk '/^\[/{ if ($0 != "[options]") exit } { print }' "$CONF" > /tmp/ounce-pacman.conf
+  printf '\n[ounce]\nServer = https://pkg.ouncebrew.org\n' >> /tmp/ounce-pacman.conf
+  for try in 1 2 3; do
+    $SUDO dkp-pacman --config /tmp/ounce-pacman.conf -Sy --noconfirm --needed libounce ouncevk libkaihen && break
+    echo "reintento $try..."; sleep 15
+  done
+  [ -f "$DEVKITPRO/libounce/switch2_rules" ] || { echo "No se pudo instalar ounce-devkit"; exit 1; }
 fi
 # Entorno de Switch 2 (compiladores, rutas de libounce/OunceVK)
 source "$DEVKITPRO/switch2vars.sh"
