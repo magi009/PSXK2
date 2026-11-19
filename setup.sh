@@ -28,6 +28,16 @@ fi
 # Su plataforma "libnx" apunta a libnx de Switch 1: la redirigimos a libounce
 sed -i 's|$(DEVKITPRO)/libnx/switch_rules|$(DEVKITPRO)/libounce/switch2_rules|g; s|$(DEVKITPRO)/libnx|$(DEVKITPRO)/libounce|g' \
   third_party/beetle-psx/Makefile
+# Rutas de cabeceras de OunceVK (GL/gl.h, EGL, Vulkan) y de libounce
+EXTRA_INC=""
+for h in GL/gl.h EGL/egl.h vulkan/vulkan.h switch.h; do
+  f=$(find "$DEVKITPRO" -path "*/include/$h" 2>/dev/null | grep -v '/libnx/' | head -1 || true)
+  echo "cabecera $h -> ${f:-NO ENCONTRADA}"
+  [ -n "$f" ] && EXTRA_INC="$EXTRA_INC -I${f%/$h}"
+done
+export CFLAGS="${CFLAGS:-} $EXTRA_INC -D__SWITCH__"
+export CXXFLAGS="${CXXFLAGS:-} $EXTRA_INC -D__SWITCH__"
+echo "EXTRA_INC=$EXTRA_INC"
 make -C third_party/beetle-psx clean >/dev/null 2>&1 || true
 make -C third_party/beetle-psx -j"$(nproc)" \
      platform=libnx HAVE_HW=1 HAVE_OPENGL=1 HAVE_VULKAN=1 HAVE_CHD=1 HAVE_LIGHTREC=0 STATIC_LINKING=1
