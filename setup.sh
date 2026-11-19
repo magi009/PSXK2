@@ -47,7 +47,7 @@ fi
 
 # Cabeceras: GL/EGL de OunceVK (preferimos portlibs/switch2) y libounce.
 # Vulkan NO: el núcleo usa sus propias cabeceras Khronos (parallel-psx/khronos).
-EXTRA_INC="-I$PWD/compat"
+EXTRA_INC="-I$PWD/compat -include $PWD/compat/vk_compat.h"
 for h in GL/gl.h EGL/egl.h KHR/khrplatform.h switch.h; do
   f=$( (find "$DEVKITPRO/portlibs/switch2" "$DEVKITPRO/libounce" -path "*/include/$h" 2>/dev/null; \
         find "$DEVKITPRO/portlibs/switch" -path "*/include/$h" 2>/dev/null) | head -1 || true)
