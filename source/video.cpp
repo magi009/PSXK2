@@ -233,18 +233,19 @@ void Video::ensureCoreFbo(unsigned w, unsigned h) {
 // ------------------------------------------------------------------ dibujo
 void Video::computeViewport(unsigned w, unsigned h) {
     Config& c = Config::get();
-    // Rectángulo de destino según aspecto
-    const char* asp = c.value("aspect");
-    float ar = !strcmp(asp, "16:9") ? 16.f / 9.f : coreAspect_;
-    if (!strcmp(asp, "stretch")) { vpW_ = scrW_; vpH_ = scrH_; }
-    else if (!strcmp(asp, "integer")) {
-        // escala entera respecto a la altura nativa (240/480)
+    // Rectángulo de destino según el modo de pantalla
+    const char* mode = c.value("screen_mode");
+    if (!strcmp(mode, "fullscreen") || !strcmp(mode, "exclusive")) {
+        // Completa: toda la pantalla. Exclusiva: igual, pero el núcleo ya renderiza en panorámico
+        vpW_ = scrW_; vpH_ = scrH_;
+    } else if (!strcmp(mode, "integer")) {
         unsigned nativeH = h; while (nativeH > 480) nativeH /= 2;
         int k = std::max(1, scrH_ / (int)nativeH);
-        vpH_ = k * nativeH; vpW_ = (int)(vpH_ * ar);
+        vpH_ = k * nativeH; vpW_ = (int)(vpH_ * coreAspect_);
+        if (vpW_ > scrW_) { vpW_ = scrW_; vpH_ = (int)(scrW_ / coreAspect_); }
     } else {
-        vpH_ = scrH_; vpW_ = (int)(scrH_ * ar);
-        if (vpW_ > scrW_) { vpW_ = scrW_; vpH_ = (int)(scrW_ / ar); }
+        vpH_ = scrH_; vpW_ = (int)(scrH_ * coreAspect_);
+        if (vpW_ > scrW_) { vpW_ = scrW_; vpH_ = (int)(scrW_ / coreAspect_); }
     }
     vpX_ = (scrW_ - vpW_) / 2; vpY_ = (scrH_ - vpH_) / 2;
 

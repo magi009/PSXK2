@@ -29,7 +29,9 @@ public:
     void saveGlobal();
     void loadGame(const std::string& gameStem);   // aplica overrides por juego
     void saveGame();
-    void clearGame();                              // borra overrides del juego actual
+    void clearGame();
+    // Restaura a valores por defecto (en el ámbito que se está editando). nullptr = todas las categorías
+    void resetCategory(const char* category);                              // borra overrides del juego actual
     void unloadGame();
     bool hasGame() const { return !gameStem_.empty(); }
 

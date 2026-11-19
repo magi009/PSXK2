@@ -8,6 +8,8 @@
 #include "paths.h"
 #include "video.h"
 #include <switch.h>
+#include <cstring>
+#include <string>
 
 int main(int, char**) {
     appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleep);
@@ -30,6 +32,8 @@ int main(int, char**) {
     AppletOperationMode lastMode = appletGetOperationMode();
     bool shotPending = false;
     u64 beatTick = armGetSystemTick(); unsigned beatFrames = 0;
+    // Protección de rendimiento
+    unsigned lastFpsSerial = 0, slowSeconds = 0; double lastGuardAction = -100;
 
     while (appletMainLoop() && !menu.quit) {
         input.update();
@@ -64,6 +68,29 @@ int main(int, char**) {
             default: break;
             }
         }
+        // Protección de rendimiento: si el juego no aguanta 57 fps durante 3 s seguidos, baja un nivel
+        // la resolución interna de ESTE juego. Se ignoran los primeros 15 s (compilación de shaders).
+        if (core.loaded() && !menu.open && !input.fastForward() && core.fpsSerial() != lastFpsSerial) {
+            lastFpsSerial = core.fpsSerial();
+            double t = core.secondsSinceLoad();
+            slowSeconds = (t > 15 && core.fps() < 57.f) ? slowSeconds + 1 : 0;
+            const char* guard = cfg.value("perf_guard");
+            if (slowSeconds >= 3 && strcmp(guard, "off") && t - lastGuardAction > 10) {
+                lastGuardAction = t; slowSeconds = 0;
+                int res = cfg.index("internal_res");
+                if (!strcmp(guard, "auto") && res > 0) {
+                    Scope prev = cfg.editScope;
+                    cfg.editScope = Scope::Game;
+                    cfg.setIndex("internal_res", res - 1);
+                    cfg.editScope = prev;
+                    LOGI("[perf] %.1f fps: resolución interna %d -> %d", core.fps(), res, res - 1);
+                    menu.toast("Rendimiento: resolución interna bajada a " + std::to_string(1 << (res - 1)) + "x");
+                } else {
+                    menu.toast("Rendimiento bajo (" + std::to_string((int)core.fps()) + " fps): baja la resolución o el MSAA");
+                }
+            }
+        }
+
         if (menu.screenshotRequested) { shotPending = true; menu.screenshotRequested = false; }
 
         if (core.loaded() && !menu.open) {

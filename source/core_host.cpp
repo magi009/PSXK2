@@ -253,6 +253,7 @@ bool CoreHost::loadGame(const std::string& path, std::string& error) {
         memcpy(mem, buf.data(), sz);
     if (sz && mem) srmShadow_.assign((unsigned char*)mem, (unsigned char*)mem + sz);
     loaded_ = true;
+    loadTick_ = armGetSystemTick(); fpsTick_ = 0; frames_ = 0;
     if (Config::get().isOn("cpu_boost")) appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
     return true;
 }
@@ -293,7 +294,10 @@ void CoreHost::unloadGame() {
 void CoreHost::reset() { if (loaded_) retro_reset(); }
 
 void CoreHost::runFrame(bool fastForward) {
-    s_blockAudio = !fastForward && Config::get().isOn("audio_sync");
+    // Con VSync la pantalla marca el ritmo y el audio se adapta (DRC); sin VSync el audio marca el ritmo.
+    // Bloquear en ambos a la vez provocaba tirones por doble espera.
+    Config& c = Config::get();
+    s_blockAudio = !fastForward && c.isOn("audio_sync") && !c.isOn("vsync");
     int n = fastForward ? 3 : 1;
     for (int i = 0; i < n; i++) {
         s_videoDone = false;
@@ -306,7 +310,11 @@ void CoreHost::runFrame(bool fastForward) {
     unsigned long long now = armGetSystemTick();
     if (!fpsTick_) fpsTick_ = now;
     double secs = armTicksToNs(now - fpsTick_) / 1e9;
-    if (secs >= 1.0) { fps_ = (float)(frames_ * n / secs); frames_ = 0; fpsTick_ = now; }
+    if (secs >= 1.0) { fps_ = (float)(frames_ * n / secs); frames_ = 0; fpsTick_ = now; fpsSerial_++; }
+}
+
+double CoreHost::secondsSinceLoad() const {
+    return loaded_ ? armTicksToNs(armGetSystemTick() - loadTick_) / 1e9 : 0.0;
 }
 
 std::string CoreHost::statePath(int slot) const {

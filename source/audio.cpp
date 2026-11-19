@@ -32,7 +32,24 @@ void Audio::shutdown() {
     ok_ = false;
 }
 
-void Audio::setInputRate(double hz) { step_ = hz / 48000.0; }
+void Audio::setInputRate(double hz) { baseStep_ = step_ = hz / 48000.0; }
+
+float Audio::fill() const {
+    int queued = 0;
+    for (int i = 0; i < kBufs; i++) if (inUse_[i]) queued++;
+    return (queued * (float)kFrames + fill_) / (kBufs * (float)kFrames);
+}
+
+// Control dinámico de frecuencia (como RetroArch): con VSync la imagen marca el ritmo (60 Hz) y el
+// juego produce audio para 59,94 Hz. Se corrige la relación de remuestreo como máximo ±0,5%
+// para mantener la cola a la mitad: ni cortes (cola vacía) ni retraso creciente (cola llena).
+void Audio::updateRate() {
+    if (block_) { step_ = baseStep_; return; }
+    float f = fill();
+    double dev = (f - 0.5f) / 0.5f;              // -1 (vacía) .. +1 (llena)
+    if (dev > 1) dev = 1; if (dev < -1) dev = -1;
+    step_ = baseStep_ * (1.0 + 0.005 * dev);
+}
 
 // Marca como libres los buffers que audout ya reprodujo
 static bool reclaimOne(bool wait, bool* inUse) {
@@ -73,6 +90,7 @@ bool Audio::acquire() {
 void Audio::push(const int16_t* in, size_t count, bool block) {
     if (!ok_) return;
     block_ = block;
+    updateRate();
     for (size_t i = 0; i < count;) {
         // interpolación lineal entre la muestra anterior y la actual
         while (pos_ < 1.0) {

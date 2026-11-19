@@ -34,9 +34,12 @@ Config::Config() {
         {{"Automática (según modo)", "auto"}, {"720p", "720"}, {"1080p", "1080"}, {"1440p", "1440"}, {"2160p (4K)", "2160"}}, 0,
         "Tamaño del framebuffer final. Automática: 1080p en portátil y 2160p (4K) en el dock. Si el "
         "sistema rechaza la resolución se vuelve a 1080p (ver log).", false},
-    {"aspect", "Relación de aspecto", C_VIDEO, nullptr,
-        {{"4:3 corregida", "4:3"}, {"16:9 (usar con Widescreen hack)", "16:9"}, {"Escalado entero", "integer"},
-         {"Estirar a pantalla", "stretch"}}, 0, "", false},
+    {"screen_mode", "Modo de pantalla", C_VIDEO, nullptr,
+        {{"Pantalla original (4:3)", "original"}, {"Pantalla completa", "fullscreen"},
+         {"Pantalla completa exclusiva", "exclusive"}, {"Escalado entero (píxel perfecto)", "integer"}}, 0,
+        "Original: 4:3 como la PlayStation, con bandas a los lados. Completa: estira la imagen a toda la "
+        "pantalla. Exclusiva: los juegos 3D se renderizan de verdad en panorámico (sin deformar) y se ocultan "
+        "FPS y avisos; en 2D puede mostrar bordes extra.", false},
     {"upscale_shader", "Escalador / filtro de salida", C_VIDEO, nullptr,
         {{"Nearest (píxel nítido)", "nearest"}, {"Bilineal", "bilinear"}, {"Sharp Bilinear", "sharp"},
          {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}}, 2,
@@ -50,9 +53,7 @@ Config::Config() {
     {"dither", "Dithering", C_VIDEO, "beetle_psx_hw_dither_mode",
         {{"1x (nativo)", "1x(native)"}, {"A resolución interna", "internal resolution"}, {"Desactivado", "disabled"}}, 2,
         "Desactivarlo junto a 32 bpp elimina la trama de puntos típica de PSX.", false},
-    {"widescreen", "Widescreen hack", C_VIDEO, "beetle_psx_hw_widescreen_hack", OFFON, 0,
-        "Fuerza 3D panorámico. Puede cortar HUDs o mostrar objetos que aparecen de golpe.", false},
-    {"widescreen_ar", "Aspecto del Widescreen hack", C_VIDEO, "beetle_psx_hw_widescreen_hack_aspect_ratio",
+    {"widescreen_ar", "Aspecto en pantalla exclusiva", C_VIDEO, "beetle_psx_hw_widescreen_hack_aspect_ratio",
         {{"16:9", "16:9"}, {"16:10", "16:10"}, {"21:9", "21:9"}}, 0, "", false},
     {"crop_overscan", "Recortar overscan", C_VIDEO, "beetle_psx_hw_crop_overscan",
         {{"Desactivado", "disabled"}, {"Estático", "static"}, {"Inteligente", "smart"}}, 1, "", false},
@@ -103,8 +104,14 @@ Config::Config() {
         "Acelera el coprocesador geométrico: menos ralentización en escenas 3D cargadas.", false},
     {"gpu_oc", "Overclock de rasterizador GPU", C_CPU, "beetle_psx_hw_gpu_overclock",
         {{"1x (nativo)", "1x(native)"}, {"2x", "2x"}, {"4x", "4x"}}, 0, "", false},
-    {"audio_sync", "Sincronizar con audio", C_CPU, nullptr, ONOFF, 0,
-        "Velocidad exacta y sonido sin cortes. Desactivar solo para pruebas.", false},
+    {"audio_sync", "Sincronización", C_CPU, nullptr,
+        {{"Automática (VSync + audio dinámico)", "enabled"}, {"Sin sincronizar (pruebas)", "disabled"}}, 0,
+        "Automática: la imagen va al ritmo de la pantalla (60 Hz) y el audio se ajusta solo un 0,5% para que no "
+        "haya cortes ni tirones. Con VSync apagado, el audio marca la velocidad.", false},
+    {"perf_guard", "Protección de rendimiento", C_CPU, nullptr,
+        {{"Automática (baja la resolución si hace falta)", "auto"}, {"Solo avisar", "warn"}, {"Desactivada", "off"}}, 0,
+        "Si el juego cae por debajo de 57 fps durante 3 segundos, baja un nivel la resolución interna de ese "
+        "juego (se recuerda en sus ajustes). Evita que las mejoras saturen la consola.", false},
 
     // ---------------------------------------------------------------- CD / BIOS
     {"skip_bios", "Saltar logo de BIOS", C_CD, "beetle_psx_hw_skip_bios", OFFON, 0, "", true},
@@ -179,10 +186,13 @@ void Config::setIndex(const char* id, int idx) {
     const OptionDef* d = find(id);
     if (!d || idx < 0 || idx >= (int)d->choices.size()) return;
     if (editScope == Scope::Game && hasGame()) game_[id] = idx; else global_[id] = idx;
-    if (d->coreKey) coreDirty_ = true; else feDirty_ = true;
+    if (d->coreKey || !strcmp(id, "screen_mode")) coreDirty_ = true;   // exclusiva activa el panorámico del núcleo
+    if (!d->coreKey) feDirty_ = true;
 }
 
 const char* Config::coreValue(const char* coreKey) const {
+    if (!strcmp(coreKey, "beetle_psx_hw_widescreen_hack"))
+        return !strcmp(value("screen_mode"), "exclusive") ? "enabled" : "disabled";
     for (auto& d : defs_)
         if (d.coreKey && !strcmp(d.coreKey, coreKey)) return d.choices[index(d.id)].value;
     return nullptr;
@@ -225,6 +235,17 @@ void Config::writeIni(const std::string& path, const std::map<std::string, int>&
         fprintf(f, "%s = \"%s\"\n", d.id, d.choices[idx].value);
     }
     fclose(f);
+}
+
+void Config::resetCategory(const char* category) {
+    std::map<std::string, int>& m = (editScope == Scope::Game && hasGame()) ? game_ : global_;
+    for (auto& d : defs_) {
+        if (category && strcmp(d.category, category)) continue;
+        if (!strcmp(d.id, "state_slot")) continue;
+        m.erase(d.id);
+    }
+    coreDirty_ = feDirty_ = true;
+    if (&m == &global_) saveGlobal(); else saveGame();
 }
 
 void Config::loadGlobal() { parseIni(paths::config + "/psx-k2.ini", global_); coreDirty_ = feDirty_ = true; }

@@ -32,6 +32,8 @@ public:
     void applyControllers();
     bool takeScreenshot(std::string& outPath);
     float fps() const { return fps_; }
+    unsigned fpsSerial() const { return fpsSerial_; }      // aumenta cada vez que se recalcula fps()
+    double secondsSinceLoad() const;
 
 private:
     std::string statePath(int slot) const;
@@ -41,4 +43,5 @@ private:
     std::vector<unsigned char> srmShadow_;
     unsigned long long lastSrmCheck_ = 0;
     float fps_ = 0; unsigned frames_ = 0; unsigned long long fpsTick_ = 0;
+    unsigned fpsSerial_ = 0; unsigned long long loadTick_ = 0;
 };

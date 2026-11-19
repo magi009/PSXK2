@@ -23,7 +23,7 @@ INCLUDES    := source third_party/imgui third_party/imgui_backend \
                third_party/beetle-psx/libretro-common/include
 APP_TITLE   := PSX-K2
 APP_AUTHOR  := PSX-K2 Team
-APP_VERSION := 0.2.0
+APP_VERSION := 0.3.0
 ICON        := icon.jpg
 
 ARCH     := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE

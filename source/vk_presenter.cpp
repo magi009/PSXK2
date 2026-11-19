@@ -433,10 +433,10 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
 }
 
 void VkPresenter::collectTextures() {
-    // Entradas sin usar desde hace 8 frames pasan al "cementerio"; se destruyen cuando ningún
+    // Entradas sin usar desde hace 3 s pasan al "cementerio"; se destruyen cuando ningún
     // frame en vuelo puede estar usándolas (sin vkDeviceWaitIdle: el núcleo usa la GPU en paralelo)
     for (size_t i = 0; i < texCache_.size();) {
-        if (frameCount_ - texCache_[i].lastUse > 8) {
+        if (frameCount_ - texCache_[i].lastUse > 180) {
             texCache_[i].lastUse = frameCount_;
             texGraveyard_.push_back(texCache_[i]);
             texCache_.erase(texCache_.begin() + i);
