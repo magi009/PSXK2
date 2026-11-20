@@ -366,6 +366,45 @@ void Video::clearScreen() {
 
 void Video::swap() { if (vk_) vk_->endFrame(); else eglSwapBuffers(s_dpy, s_surf); }
 void Video::beginFrame() { if (vk_) vk_->beginFrame(); }
+
+void Video::updateRefresh(double gameFps) {
+    if (!vk_) return;
+    Config& c = Config::get();
+    int mode = c.index("display_120");
+    vk_->updateRefresh(mode, (unsigned)(gameFps + 0.5), c.isOn("vsync"));
+}
+
+void Video::setLive(bool live) {
+    live_ = live;
+    if (vk_) vk_->setInterp(live);
+}
+
+const char* Video::refreshStatus() const {
+    if (!vk_) return "60 Hz";
+    bool dbl = vk_->doublePresent();
+    switch (vk_->refreshMode()) {
+    case 1: return "VRR a la frecuencia del juego";
+    case 2: return dbl ? "120 Hz con negro intercalado (BFI)" : "BFI en espera: la pantalla va a 60 Hz";
+    case 3: return dbl ? "120 Hz con frames intermedios" : "Frames intermedios en espera: la pantalla va a 60 Hz";
+    default: return "60 Hz";
+    }
+}
+
+void Video::extraPresent() {
+    if (!vk_ || !vk_->doublePresent()) return;
+    ImDrawData* dd = ImGui::GetDrawData();
+    bool ui = dd && dd->Valid;
+    vk_->beginFrame();
+    if (live_ && vk_->refreshMode() == 2) {
+        // BFI: imagen negra (endFrame limpia si no se dibujó nada); el OSD parpadea con ella
+    } else if (live_ && vk_->refreshMode() == 3 && vk_->presentInterpLatest()) {
+        if (ui) vk_->imguiRender(dd);          // el frame real, con el OSD encima
+    } else {
+        redrawLast();                          // menú, avance rápido o sin juego: se repite la imagen
+        if (ui) vk_->imguiRender(dd);
+    }
+    vk_->endFrame();
+}
 retro_hw_render_interface_vulkan* Video::vkInterface() { return vk_ ? vk_->iface() : nullptr; }
 void Video::vkReleaseCoreDevice() { if (vk_) vk_->releaseCoreDevice(); }
 bool Video::vkAdoptCoreDevice(const retro_hw_render_context_negotiation_interface_vulkan* neg) {

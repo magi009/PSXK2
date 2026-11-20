@@ -35,6 +35,14 @@ public:
     void swap();
     void beginFrame();                                            // Vulkan: adquiere imagen
 
+    // Pantalla 120 Hz (solo Vulkan). updateRefresh() una vez por frame con los fps nominales del juego;
+    // setLive() antes de emular: true si el juego corre a velocidad normal y sin menú;
+    // extraPresent() después de swap(): segunda imagen del frame (negra, intermedia o repetida).
+    void updateRefresh(double gameFps);
+    void setLive(bool live);
+    void extraPresent();
+    const char* refreshStatus() const;   // texto para Información
+
     bool isVulkan() const { return vk_ != nullptr; }
     retro_hw_render_interface_vulkan* vkInterface();
     void resetCoreImage();
@@ -73,6 +81,7 @@ private:
     GLuint vao_ = 0;
     GLuint progs_[6] = {};
     float coreAspect_ = 4.0f / 3.0f;
+    bool live_ = false;
 
     enum { LAST_NONE, LAST_HW, LAST_SW } last_ = LAST_NONE;
     unsigned lastW_ = 0, lastH_ = 0;

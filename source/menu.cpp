@@ -729,8 +729,9 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.5.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.6.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
+    ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
     BeginCard("keys", ImGui::GetFontSize() * 9.2f);
     ImGui::TextColored(C_ACCENT2, "Atajos durante el juego");

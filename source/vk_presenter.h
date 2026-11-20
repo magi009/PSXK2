@@ -39,7 +39,16 @@ public:
     void imguiNewFrame();
     void imguiRender(ImDrawData* dd);
 
-    void resetCore() { hasCoreImg_ = false; histValid_ = false; }
+    void resetCore() { hasCoreImg_ = false; histValid_ = false; fgValid_ = false; }
+
+    // ---- Pantalla 120 Hz (vk_post.cpp)
+    // mode: 0 = 60 Hz normal, 1 = VRR a la frecuencia del juego, 2 = BFI, 3 = frames intermedios.
+    // Se llama cada frame: aplica las tasas a la ventana solo si cambian y comprueba si la pantalla va a 120 Hz.
+    void updateRefresh(int mode, unsigned gameFps, bool vsync);
+    bool doublePresent() const { return doublePresent_; }   // 2 presentaciones por frame emulado
+    int refreshMode() const { return refreshMode_; }
+    void setInterp(bool live);                              // juego corriendo a velocidad normal, sin menú
+    bool presentInterpLatest();                             // frame extra: el último frame real
     // Antialiasing de posprocesado: FXAA y/o TAA (temporal). El MSAA lo hace el núcleo.
     void setAntialiasing(bool fxaa, bool taa) { if (taa != aaTaa_) histValid_ = false; aaFxaa_ = fxaa; aaTaa_ = taa; }
     // Negociación libretro: el núcleo crea el VkDevice (Beetle lo exige) y lo adoptamos
@@ -150,8 +159,21 @@ private:
     uint32_t histW_ = 0, histH_ = 0;
     int histCur_ = 0;
     bool histValid_ = false;
-    struct PendingPost { VkImageView view; VkImageLayout layout; bool linear; bool fxaa; float rcp[2]; int vx, vy, vw, vh; };
-    PendingPost post_ = {};
+    bool createTarget(Hist& t, uint32_t w, uint32_t h);
+    bool ensureFg(uint32_t w, uint32_t h);
+    void recordCopy(VkImageView src, VkImageLayout lay, Hist& dst, uint32_t w, uint32_t h);
+    int refreshMode_ = 0, appliedMode_ = -1;
+    unsigned appliedFps_ = 0;
+    bool ratesSet_ = false, doublePresent_ = false, interpLive_ = false;
+    Hist fg_[2] = {};
+    uint32_t fgW_ = 0, fgH_ = 0;
+    int fgLatest_ = 0;
+    bool fgValid_ = false;
+    VkPipeline pipeBlend_ = VK_NULL_HANDLE, pipeCopy_ = VK_NULL_HANDLE;
+    VkShaderModule fsBlend_ = VK_NULL_HANDLE;
+    struct PendingPost { VkImageView view; VkImageLayout layout; bool linear; bool fxaa; float rcp[2]; int vx, vy, vw, vh;
+                         VkImageView blendWith = VK_NULL_HANDLE; };   // != null: mezcla 50 % (frame intermedio)
+    PendingPost post_ = {}, fgPost_ = {};
     bool pendingPost_ = false;
 
     // Frames por software

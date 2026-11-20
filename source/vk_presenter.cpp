@@ -302,6 +302,7 @@ bool VkPresenter::createSwapchain(bool vsync) {
         VkSemaphore sem; VKCHECK(vkCreateSemaphore(dev_, &s, nullptr, &sem)); renderDone_.push_back(sem);
     }
     LOGI("[vk] swapchain %ux%u, %zu imágenes, modo %d", extent_.width, extent_.height, images_.size(), mode);
+    appliedMode_ = -1;   // se vuelven a aplicar las tasas de la pantalla 120 Hz en el siguiente frame
     return true;
 }
 
@@ -424,6 +425,19 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
         }
         post_ = {src, lay, linear, fx, {1.f / w, 1.f / h}, vx, vy, vw, vh};
         pendingPost_ = true;
+        // Frames intermedios (120 Hz): se guarda una copia propia del frame y esta presentación muestra
+        // la mezcla con el anterior; el frame real va en la presentación extra (Video::extraPresent).
+        if (interpLive_ && ensureFg(w, h)) {
+            int cur = fgValid_ ? fgLatest_ ^ 1 : 0;
+            recordCopy(src, lay, fg_[cur], w, h);
+            fgPost_ = post_;
+            fgPost_.view = fg_[cur].view; fgPost_.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            fgPost_.blendWith = VK_NULL_HANDLE;
+            post_ = fgPost_;
+            if (fgValid_) { post_.view = fg_[fgLatest_].view; post_.blendWith = fg_[cur].view; }
+            fgLatest_ = cur;
+            fgValid_ = true;
+        }
         return;
     }
     // Descriptor (sampler + vista) cacheado por vista de imagen

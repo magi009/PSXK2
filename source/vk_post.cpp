@@ -8,6 +8,8 @@
 #include "spv_fullscreen_vert.h"
 #include "spv_present_frag.h"
 #include "spv_taa_frag.h"
+#include "spv_blend_frag.h"
+#include <switch.h>
 
 struct PostPC { float rcp[2]; float mode; float blend; };
 
@@ -55,7 +57,9 @@ bool VkPresenter::ensurePost() {
     if (postReady_ && postForPass_ == uiPass_) return true;
     if (postReady_) {   // el render pass de la pantalla cambió (formato nuevo): solo se rehace ese pipeline
         vkDestroyPipeline(dev_, pipePresent_, nullptr);
+        if (pipeBlend_) vkDestroyPipeline(dev_, pipeBlend_, nullptr);
         pipePresent_ = makePipeline(dev_, uiPass_, postLayout_, vsMod_, fsPresent_);
+        pipeBlend_ = makePipeline(dev_, uiPass_, postLayout_, vsMod_, fsBlend_);
         postForPass_ = uiPass_;
         return pipePresent_ != VK_NULL_HANDLE;
     }
@@ -107,6 +111,9 @@ bool VkPresenter::ensurePost() {
     fsTaa_ = makeModule(dev_, spv_taa_frag, sizeof(spv_taa_frag));
     pipePresent_ = makePipeline(dev_, uiPass_, postLayout_, vsMod_, fsPresent_);
     pipeTaa_ = makePipeline(dev_, histPass_, postLayout_, vsMod_, fsTaa_);
+    fsBlend_ = makeModule(dev_, spv_blend_frag, sizeof(spv_blend_frag));
+    pipeBlend_ = makePipeline(dev_, uiPass_, postLayout_, vsMod_, fsBlend_);     // frames intermedios (120 Hz)
+    pipeCopy_ = makePipeline(dev_, histPass_, postLayout_, vsMod_, fsPresent_);  // copia a imagen propia
     postForPass_ = uiPass_;
     postReady_ = pipePresent_ && pipeTaa_;
     if (!postReady_) { postFailed_ = true; LOGI("[vk] no se pudo crear el posprocesado; se usa el modo simple"); destroyPost(); }
@@ -125,30 +132,36 @@ void VkPresenter::collectHistory() {
     }
 }
 
+bool VkPresenter::createTarget(Hist& hh, uint32_t w, uint32_t h) {
+    hh = {};
+    VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM; ii.extent = {w, h, 1};
+    ii.mipLevels = 1; ii.arrayLayers = 1; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    if (vkCreateImage(dev_, &ii, nullptr, &hh.img) != VK_SUCCESS) { hh.img = VK_NULL_HANDLE; return false; }
+    VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev_, hh.img, &mr);
+    VkMemoryAllocateInfo mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    mai.allocationSize = mr.size; mai.memoryTypeIndex = memType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(dev_, &mai, nullptr, &hh.mem) != VK_SUCCESS) {
+        vkDestroyImage(dev_, hh.img, nullptr); hh = {}; return false;
+    }
+    vkBindImageMemory(dev_, hh.img, hh.mem, 0);
+    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = hh.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCreateImageView(dev_, &vi, nullptr, &hh.view);
+    VkFramebufferCreateInfo fi = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+    fi.renderPass = histPass_; fi.attachmentCount = 1; fi.pAttachments = &hh.view;
+    fi.width = w; fi.height = h; fi.layers = 1;
+    vkCreateFramebuffer(dev_, &fi, nullptr, &hh.fb);
+    return true;
+}
+
 bool VkPresenter::ensureHistory(uint32_t w, uint32_t h) {
     if (hist_[0].img && histW_ == w && histH_ == h) return true;
     // Las anteriores se liberan cuando ningún frame en vuelo las use (sin detener la GPU)
     for (auto& old : hist_) if (old.img) { old.freeAt = frameCount_ + kFrames + 2; histGrave_.push_back(old); old = {}; }
-    for (auto& hh : hist_) {
-        VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM; ii.extent = {w, h, 1};
-        ii.mipLevels = 1; ii.arrayLayers = 1; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        if (vkCreateImage(dev_, &ii, nullptr, &hh.img) != VK_SUCCESS) return false;
-        VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev_, hh.img, &mr);
-        VkMemoryAllocateInfo mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        mai.allocationSize = mr.size; mai.memoryTypeIndex = memType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        vkAllocateMemory(dev_, &mai, nullptr, &hh.mem);
-        vkBindImageMemory(dev_, hh.img, hh.mem, 0);
-        VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        vi.image = hh.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = VK_FORMAT_R8G8B8A8_UNORM;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCreateImageView(dev_, &vi, nullptr, &hh.view);
-        VkFramebufferCreateInfo fi = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-        fi.renderPass = histPass_; fi.attachmentCount = 1; fi.pAttachments = &hh.view;
-        fi.width = w; fi.height = h; fi.layers = 1;
-        vkCreateFramebuffer(dev_, &fi, nullptr, &hh.fb);
-    }
+    for (auto& hh : hist_) if (!createTarget(hh, w, h)) return false;
     histW_ = w; histH_ = h; histValid_ = false;
     LOGI("[vk] historial TAA %ux%u", w, h);
     return true;
@@ -194,16 +207,17 @@ void VkPresenter::recordTaa(VkImageView cur, VkImageLayout curLayout, uint32_t w
 
 void VkPresenter::drawPendingGame() {
     if (!pendingPost_ || !postReady_) return;
-    VkDescriptorSet set = allocPostSet(post_.view, post_.layout, post_.view, post_.layout,
+    bool blend = post_.blendWith && pipeBlend_;
+    VkDescriptorSet set = allocPostSet(post_.view, post_.layout, blend ? post_.blendWith : post_.view, post_.layout,
                                        post_.linear || post_.fxaa ? sampLinear_ : sampNearest_);
     if (!set) return;
     VkCommandBuffer cb = cmd_[frame_];
     VkViewport vp = {(float)post_.vx, (float)post_.vy, (float)post_.vw, (float)post_.vh, 0, 1};
     VkRect2D sc = {{0, 0}, extent_};
     vkCmdSetViewport(cb, 0, 1, &vp); vkCmdSetScissor(cb, 0, 1, &sc);
-    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipePresent_);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, blend ? pipeBlend_ : pipePresent_);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &set, 0, nullptr);
-    PostPC pc = {{post_.rcp[0], post_.rcp[1]}, post_.fxaa ? 1.f : 0.f, 1.f};
+    PostPC pc = {{post_.rcp[0], post_.rcp[1]}, post_.fxaa ? 1.f : 0.f, blend ? 0.5f : 1.f};
     vkCmdPushConstants(cb, postLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
     vkCmdDraw(cb, 3, 1, 0, 0);
 }
@@ -228,6 +242,12 @@ void VkPresenter::endUiPass() {
 void VkPresenter::destroyPost() {
     if (!dev_) return;
     for (auto& hh : hist_) if (hh.img) { hh.freeAt = 0; histGrave_.push_back(hh); hh = {}; }
+    for (auto& hh : fg_) if (hh.img) { hh.freeAt = 0; histGrave_.push_back(hh); hh = {}; }
+    fgW_ = fgH_ = 0; fgValid_ = false;
+    if (pipeBlend_) vkDestroyPipeline(dev_, pipeBlend_, nullptr);
+    if (pipeCopy_) vkDestroyPipeline(dev_, pipeCopy_, nullptr);
+    if (fsBlend_) vkDestroyShaderModule(dev_, fsBlend_, nullptr);
+    pipeBlend_ = pipeCopy_ = VK_NULL_HANDLE; fsBlend_ = VK_NULL_HANDLE;
     for (auto& h : histGrave_) {
         vkDestroyFramebuffer(dev_, h.fb, nullptr); vkDestroyImageView(dev_, h.view, nullptr);
         vkDestroyImage(dev_, h.img, nullptr); vkFreeMemory(dev_, h.mem, nullptr);
@@ -246,4 +266,77 @@ void VkPresenter::destroyPost() {
     histPass_ = VK_NULL_HANDLE; postPool_[0] = postPool_[1] = VK_NULL_HANDLE;
     postLayout_ = VK_NULL_HANDLE; postDsl_ = VK_NULL_HANDLE; postForPass_ = VK_NULL_HANDLE;
     postReady_ = false; pendingPost_ = false;
+}
+
+// ------------------------------------------------------------------ Pantalla 120 Hz
+// VRR: la ventana presenta a la frecuencia del juego (60 o 50), sin saltos en PAL.
+// BFI / frames intermedios: la ventana va al doble (120 o 100) y por cada frame emulado se presentan
+// dos imágenes. Si la pantalla no está a 120 Hz (TV de 60 Hz en el dock) se presenta una sola y la
+// emulación no se ralentiza. La emulación siempre la marca el frame emulado, no la pantalla.
+void VkPresenter::updateRefresh(int mode, unsigned fps, bool vsync) {
+    if (!vsync) mode = 0;                       // sin VSync no hay ritmo de pantalla que seguir
+    fps = fps < 55 ? 50 : 60;
+    refreshMode_ = mode;
+    NWindow* win = nwindowGetDefault();
+    if (mode != appliedMode_ || fps != appliedFps_) {
+        Result rc = 0;
+        if (mode == 0) { if (ratesSet_) rc = nwindowSetSwapInterval(win, 1); ratesSet_ = false; }
+        else if (mode == 1) { rc = nwindowSetFrameRates(win, fps, fps, true); ratesSet_ = true; }
+        else { rc = nwindowSetFrameRates(win, fps * 2, fps, true); ratesSet_ = true; }
+        LOGI("[vk] pantalla: modo %d, juego a %u fps (rc=0x%x)", mode, fps, rc);
+        appliedMode_ = mode; appliedFps_ = fps;
+        fgValid_ = false;
+    }
+    bool dbl = false;
+    if (mode >= 2) {
+        u16 num = 0, den = 0;
+        if (R_SUCCEEDED(nwindowGetPresentInterval(win, &num, &den)) && num == 1 && den >= fps * 2) dbl = true;
+    }
+    if (dbl != doublePresent_) {
+        LOGI("[vk] %s", dbl ? "pantalla a 120 Hz: 2 imágenes por frame" : "pantalla a 60 Hz: 1 imagen por frame");
+        doublePresent_ = dbl;
+        fgValid_ = false;
+    }
+}
+
+void VkPresenter::setInterp(bool live) {
+    bool on = live && doublePresent_ && refreshMode_ == 3;
+    if (!on) fgValid_ = false;                  // al volver del menú no se mezcla con un frame viejo
+    interpLive_ = on;
+}
+
+bool VkPresenter::ensureFg(uint32_t w, uint32_t h) {
+    if (!pipeCopy_ || !pipeBlend_) return false;
+    if (fg_[0].img && fg_[1].img && fgW_ == w && fgH_ == h) return true;
+    for (auto& old : fg_) if (old.img) { old.freeAt = frameCount_ + kFrames + 2; histGrave_.push_back(old); old = {}; }
+    fgW_ = fgH_ = 0; fgValid_ = false;
+    for (auto& t : fg_) if (!createTarget(t, w, h)) return false;
+    fgW_ = w; fgH_ = h;
+    LOGI("[vk] frames intermedios %ux%u", w, h);
+    return true;
+}
+
+void VkPresenter::recordCopy(VkImageView src, VkImageLayout lay, Hist& dst, uint32_t w, uint32_t h) {
+    VkDescriptorSet set = allocPostSet(src, lay, src, lay, sampNearest_);
+    if (!set) return;
+    VkCommandBuffer cb = cmd_[frame_];
+    VkRenderPassBeginInfo rb = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rb.renderPass = histPass_; rb.framebuffer = dst.fb; rb.renderArea.extent = {w, h};
+    vkCmdBeginRenderPass(cb, &rb, VK_SUBPASS_CONTENTS_INLINE);
+    VkViewport vp = {0, 0, (float)w, (float)h, 0, 1};
+    VkRect2D sc = {{0, 0}, {w, h}};
+    vkCmdSetViewport(cb, 0, 1, &vp); vkCmdSetScissor(cb, 0, 1, &sc);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeCopy_);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &set, 0, nullptr);
+    PostPC pc = {{1.f / w, 1.f / h}, 0.f, 1.f};
+    vkCmdPushConstants(cb, postLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
+    vkCmdDraw(cb, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cb);
+}
+
+bool VkPresenter::presentInterpLatest() {
+    if (!fgValid_ || !postReady_) return false;
+    post_ = fgPost_;
+    pendingPost_ = true;
+    return true;
 }

@@ -71,6 +71,7 @@ int main(int, char**) {
         // Cambio portátil <-> dock o de opciones del frontend
         AppletOperationMode mode = appletGetOperationMode();
         if (mode != lastMode || cfg.consumeFrontendDirty()) { lastMode = mode; video.applyOutputMode(); }
+        video.updateRefresh(core.nominalFps());   // pantalla 120 Hz: aplica las tasas si cambian
         video.beginFrame();
 
         // El atajo del menú se procesa UNA vez por frame (antes se abría y cerraba en el mismo frame)
@@ -122,8 +123,10 @@ int main(int, char**) {
 
         if (menu.screenshotRequested) { shotPending = true; menu.screenshotRequested = false; }
 
+        bool fastFwd = input.fastForward() || menu.turbo;
+        video.setLive(core.loaded() && !menu.open && !fastFwd);
         if (core.loaded() && !menu.open) {
-            core.runFrame(input.fastForward() || menu.turbo);
+            core.runFrame(fastFwd);
             if (shotPending) {               // se captura antes de dibujar el OSD
                 std::string p;
                 menu.toast(core.takeScreenshot(p) ? "Captura guardada" : "Error en captura");
@@ -135,6 +138,7 @@ int main(int, char**) {
             menu.draw();
         }
         video.swap();
+        video.extraPresent();                     // 120 Hz: segunda imagen del frame (BFI / intermedia)
         beatFrames++;
         if (armTicksToNs(armGetSystemTick() - beatTick) >= 5000000000ULL) {
             LOGI("[main] vivo: %u ciclos en 5 s, juego %s (%.1f fps), menú %s", beatFrames,

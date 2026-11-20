@@ -32,6 +32,7 @@ public:
     void applyControllers();
     bool takeScreenshot(std::string& outPath);
     float fps() const { return fps_; }
+    double nominalFps() const;                             // fps del juego (59.94 NTSC / 49.76 PAL); 60 sin juego
     unsigned fpsSerial() const { return fpsSerial_; }      // aumenta cada vez que se recalcula fps()
     double secondsSinceLoad() const;
 

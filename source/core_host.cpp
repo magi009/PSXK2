@@ -341,6 +341,10 @@ void CoreHost::runFrame(bool fastForward) {
     if (secs >= 1.0) { fps_ = (float)(frames_ * n / secs); frames_ = 0; fpsTick_ = now; fpsSerial_++; }
 }
 
+double CoreHost::nominalFps() const {
+    return loaded_ && s_av.timing.fps > 1.0 ? s_av.timing.fps : 60.0;
+}
+
 double CoreHost::secondsSinceLoad() const {
     return loaded_ ? armTicksToNs(armGetSystemTick() - loadTick_) / 1e9 : 0.0;
 }

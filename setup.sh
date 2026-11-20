@@ -93,5 +93,6 @@ mkdir -p third_party/gen
 glslangValidator -V --vn spv_fullscreen_vert -o third_party/gen/spv_fullscreen_vert.h shaders/fullscreen.vert
 glslangValidator -V --vn spv_present_frag   -o third_party/gen/spv_present_frag.h   shaders/present.frag
 glslangValidator -V --vn spv_taa_frag       -o third_party/gen/spv_taa_frag.h       shaders/taa.frag
+glslangValidator -V --vn spv_blend_frag     -o third_party/gen/spv_blend_frag.h     shaders/blend.frag
 
 echo "Listo. Ahora ejecuta: make dist"

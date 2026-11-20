@@ -23,11 +23,11 @@ INCLUDES    := source third_party/imgui third_party/imgui_backend third_party/st
                third_party/beetle-psx/libretro-common/include
 APP_TITLE   := PSX-K2
 APP_AUTHOR  := PSX-K2 Team
-APP_VERSION := 0.5.0
+APP_VERSION	:=	0.6.0
 ICON        := icon.jpg
 
 ARCH     := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
-DEFINES  := -D__SWITCH__ -DIMGUI_IMPL_OPENGL_LOADER_CUSTOM -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS
+DEFINES  := -D__SWITCH__ -D__SWITCH2__ -DIMGUI_IMPL_OPENGL_LOADER_CUSTOM -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS
 CFLAGS   := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES)
 CFLAGS   += $(INCLUDE)
 CXXFLAGS := $(CFLAGS) -std=gnu++17 -fno-exceptions -fno-rtti

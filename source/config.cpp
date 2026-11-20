@@ -65,6 +65,16 @@ Config::Config() {
     {"crop_overscan", "Recortar overscan", C_VIDEO, "beetle_psx_hw_crop_overscan",
         {{"Desactivado", "disabled"}, {"Estático", "static"}, {"Inteligente", "smart"}}, 1, "", false},
     {"vsync", "VSync", C_VIDEO, nullptr, ONOFF, 0, "", false},
+    {"display_120", "Pantalla 120 Hz", C_VIDEO, nullptr,
+        {{"Desactivada (60 Hz)", "off"}, {"VRR a la frecuencia del juego", "vrr"},
+         {"Negro intercalado (BFI, menos desenfoque)", "bfi"}, {"Frames intermedios (experimental)", "interp"}}, 0,
+        "Aprovecha la pantalla de 120 Hz de la consola en modo portátil (en el dock con una TV de 60 Hz se usa "
+        "lo normal). VRR: la pantalla va a la frecuencia exacta del juego, así los juegos PAL (50 Hz) se ven "
+        "sin saltos. BFI: entre cada frame se muestra uno negro, lo que reduce mucho el desenfoque de movimiento "
+        "a cambio de algo de brillo y parpadeo. Frames intermedios: muestra una mezcla del frame anterior y el "
+        "siguiente entre cada frame (no es generación con vectores de movimiento: suaviza, pero puede dejar "
+        "estelas y añade unos 8 ms de retardo). Requiere Vulkan y VSync activado. La emulación sigue a su "
+        "velocidad original.", false},
     {"show_fps", "Mostrar FPS", C_VIDEO, nullptr, OFFON, 0, "", false},
 
     // ---------------------------------------------------------------- ANTIALIASING
@@ -193,7 +203,7 @@ static const struct { const char* id; unsigned flags; } kFlags[] = {
     {"internal_res", OPT_HW_ONLY}, {"msaa", OPT_VULKAN_ONLY}, {"depth", OPT_HW_ONLY}, {"dither", OPT_HW_ONLY},
     {"widescreen_ar", 0}, {"tex_filter", OPT_HW_ONLY}, {"filter_ex_sprite", OPT_HW_ONLY},
     {"filter_ex_2d", OPT_HW_ONLY}, {"adaptive_smooth", OPT_VULKAN_ONLY}, {"supersampling", OPT_HW_ONLY},
-    {"mdec_yuv", OPT_VULKAN_ONLY}, {"scaled_uv", OPT_HW_ONLY}, {"pgxp_texture", OPT_HW_ONLY},
+    {"mdec_yuv", OPT_VULKAN_ONLY}, {"display_120", OPT_VULKAN_ONLY}, {"scaled_uv", OPT_HW_ONLY}, {"pgxp_texture", OPT_HW_ONLY},
 };
 
 bool Config::appliesToRenderer(const OptionDef& d) const {
