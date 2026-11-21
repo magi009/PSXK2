@@ -57,6 +57,7 @@ private:
 
     ImFont* fontBody_ = nullptr;
     ImFont* fontTitle_ = nullptr;
+    ImFont* fontSmall_ = nullptr;
     float scale_ = 1.f;
     float openAnim_ = 0.f;        // 0..1 animación de entrada
     float tabAnim_ = 1.f;         // fundido al cambiar de sección

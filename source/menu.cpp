@@ -27,13 +27,15 @@
 #define G_MINUS ""
 
 // Paleta
-static const ImVec4 C_BG      = ImVec4(0.055f, 0.067f, 0.094f, 0.96f);
-static const ImVec4 C_PANEL   = ImVec4(0.090f, 0.106f, 0.149f, 1.00f);
-static const ImVec4 C_PANEL2  = ImVec4(0.125f, 0.145f, 0.200f, 1.00f);
-static const ImVec4 C_ACCENT  = ImVec4(0.424f, 0.361f, 0.906f, 1.00f);   // violeta
-static const ImVec4 C_ACCENT2 = ImVec4(0.000f, 0.706f, 0.847f, 1.00f);   // cian
-static const ImVec4 C_TEXT    = ImVec4(0.902f, 0.914f, 0.941f, 1.00f);
-static const ImVec4 C_MUTED   = ImVec4(0.541f, 0.576f, 0.651f, 1.00f);
+// Paleta del diseño: azul medianoche, superficies apenas más claras y un único acento azul
+static const ImVec4 C_BG      = ImVec4(0.039f, 0.059f, 0.118f, 0.97f);   // #0A0F1E
+static const ImVec4 C_PANEL   = ImVec4(0.071f, 0.102f, 0.180f, 1.00f);   // #121A2E
+static const ImVec4 C_PANEL2  = ImVec4(0.102f, 0.141f, 0.251f, 1.00f);   // #1A2440
+static const ImVec4 C_LINE    = ImVec4(0.110f, 0.149f, 0.251f, 1.00f);   // #1C2640
+static const ImVec4 C_ACCENT  = ImVec4(0.298f, 0.510f, 1.000f, 1.00f);   // #4C82FF
+static const ImVec4 C_ACCENT2 = ImVec4(0.561f, 0.690f, 1.000f, 1.00f);   // #8FB0FF
+static const ImVec4 C_TEXT    = ImVec4(0.910f, 0.925f, 0.965f, 1.00f);   // #E8ECF6
+static const ImVec4 C_MUTED   = ImVec4(0.576f, 0.627f, 0.741f, 1.00f);   // #93A0BD
 static const ImVec4 C_DANGER  = ImVec4(0.922f, 0.341f, 0.341f, 1.00f);
 static const ImVec4 C_WARN    = ImVec4(1.000f, 0.690f, 0.290f, 1.00f);
 
@@ -54,7 +56,8 @@ bool Menu::init() {
     io.KeyRepeatRate = 0.065f;
 
     scale_ = video_.screenH() / 1080.f;
-    float body = std::round(30.f * scale_) + 4.f, title = std::round(body * 1.55f);
+    // Más pequeña que antes (34 -> 25 px a 1080p): cabe más sin tapar nada y sigue legible en portátil
+    float body = std::round(23.f * scale_) + 2.f, title = std::round(body * 1.32f), small = std::round(body * 0.84f);
     static const ImWchar extRange[] = {0xE000, 0xE152, 0};
     // Latín + símbolos que usa la interfaz (◀ ▶ ★)
     static ImVector<ImWchar> ranges;
@@ -80,6 +83,7 @@ bool Menu::init() {
     };
     fontBody_ = addFont(body);
     fontTitle_ = addFont(title);
+    fontSmall_ = addFont(small);
     psmInitialize();
     applyStyle();
     return video_.imguiInit();
@@ -89,11 +93,11 @@ void Menu::applyStyle() {
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowPadding = ImVec2(0, 0);
-    st.FramePadding = ImVec2(22, 15);
-    st.ItemSpacing = ImVec2(18, 16);
-    st.ItemInnerSpacing = ImVec2(10, 8);
-    st.ScrollbarSize = 16;
-    st.WindowRounding = 18; st.ChildRounding = 14; st.FrameRounding = 12; st.PopupRounding = 16;
+    st.FramePadding = ImVec2(18, 11);
+    st.ItemSpacing = ImVec2(14, 12);
+    st.ItemInnerSpacing = ImVec2(8, 6);
+    st.ScrollbarSize = 10;
+    st.WindowRounding = 0; st.ChildRounding = 12; st.FrameRounding = 10; st.PopupRounding = 16;
     st.GrabRounding = 10; st.ScrollbarRounding = 10;
     st.WindowBorderSize = 0; st.ChildBorderSize = 0; st.PopupBorderSize = 0; st.FrameBorderSize = 0;
     st.SelectableTextAlign = ImVec2(0, 0.5f);
@@ -101,9 +105,9 @@ void Menu::applyStyle() {
     ImVec4* c = st.Colors;
     c[ImGuiCol_Text] = C_TEXT;                 c[ImGuiCol_TextDisabled] = C_MUTED;
     c[ImGuiCol_WindowBg] = C_BG;               c[ImGuiCol_ChildBg] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_PopupBg] = C_PANEL2;            c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.55f);
-    c[ImGuiCol_FrameBg] = C_PANEL2;            c[ImGuiCol_FrameBgHovered] = ImVec4(0.18f, 0.20f, 0.28f, 1);
-    c[ImGuiCol_Button] = C_PANEL2;             c[ImGuiCol_ButtonHovered] = ImVec4(0.20f, 0.22f, 0.32f, 1);
+    c[ImGuiCol_PopupBg] = C_PANEL;            c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.55f);
+    c[ImGuiCol_FrameBg] = C_PANEL2;            c[ImGuiCol_FrameBgHovered] = ImVec4(0.14f, 0.19f, 0.32f, 1);
+    c[ImGuiCol_Button] = C_PANEL2;             c[ImGuiCol_ButtonHovered] = ImVec4(0.14f, 0.19f, 0.32f, 1);
     c[ImGuiCol_ButtonActive] = C_ACCENT;
     c[ImGuiCol_Header] = ImVec4(C_ACCENT.x, C_ACCENT.y, C_ACCENT.z, 0.30f);
     c[ImGuiCol_HeaderHovered] = ImVec4(C_ACCENT.x, C_ACCENT.y, C_ACCENT.z, 0.40f);
@@ -111,7 +115,7 @@ void Menu::applyStyle() {
     c[ImGuiCol_NavCursor] = ImVec4(0, 0, 0, 0);   // sin recuadro azul/verde
     c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_ScrollbarGrab] = ImVec4(1, 1, 1, 0.15f);
-    c[ImGuiCol_Separator] = ImVec4(1, 1, 1, 0.07f);
+    c[ImGuiCol_Separator] = C_LINE;
     c[ImGuiCol_CheckMark] = C_ACCENT2;
 }
 
@@ -265,49 +269,55 @@ static void BeginCard(const char* id, float height) {
 static void EndCard() { ImGui::EndChild(); ImGui::PopStyleVar(); ImGui::PopStyleColor(); }
 
 void Menu::drawHeader() {
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    float hh = ImGui::GetFontSize() * 2.3f;
+    float W = ImGui::GetContentRegionAvail().x;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     ImGui::PushFont(fontTitle_);
-    ImGui::TextColored(C_ACCENT, "PSX");
-    ImGui::SameLine(0, 4);
-    ImGui::TextColored(C_TEXT, "-K2");
+    float ty = p0.y + (hh - ImGui::GetFontSize()) * 0.5f;
+    dl->AddText(ImVec2(p0.x, ty), col(C_ACCENT), "PSX");
+    float lx = p0.x + ImGui::CalcTextSize("PSX").x;
+    dl->AddText(ImVec2(lx, ty), col(C_TEXT), "-K2");
+    lx += ImGui::CalcTextSize("-K2").x;
     ImGui::PopFont();
+    float by = p0.y + (hh - ImGui::GetFontSize()) * 0.5f;
     if (core_.loaded()) {
-        ImGui::SameLine(0, 30);
-        float y = ImGui::GetCursorPosY();
-        ImGui::SetCursorPosY(y + ImGui::GetFontSize() * 0.45f);
-        ImGui::TextColored(C_MUTED, "%s", core_.gameStem().c_str());
-        ImGui::SetCursorPosY(y);
+        std::string g = core_.gameStem();
+        dl->AddText(ImVec2(lx + 28 * scale_, by), col(C_MUTED), g.c_str());
     }
-    // Hora y batería a la derecha
     char right[64];
-    snprintf(right, sizeof right, "%s%s     %u%%", wasOnline_ ? "\u25CF En línea     " : "", clock_, battery_);
-    float w = ImGui::CalcTextSize(right).x;
-    float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-    ImGui::SameLine(rightEdge - w);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetFontSize() * 0.45f);
-    ImGui::TextColored(C_TEXT, "%s", right);
+    snprintf(right, sizeof right, "%s%s    %u%%", wasOnline_ ? "\u25CF En línea    " : "", clock_, battery_);
+    float rw = ImGui::CalcTextSize(right).x;
+    dl->AddText(ImVec2(p0.x + W - rw, by), col(ImVec4(0.79f, 0.82f, 0.90f, 1)), right);
+    ImGui::Dummy(ImVec2(W, hh));
 }
 
 void Menu::drawSidebar(float w) {
     static const char* kNames[5] = {"Biblioteca", "Juego", "Ajustes", "Información", "Salir"};
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, C_PANEL);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14 * scale_, 18 * scale_));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 14 * scale_));
     // Sin navegación por mando: las secciones se cambian con L/R (o tocando)
     ImGui::BeginChild("side", ImVec2(w, 0), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    float itemH = ImGui::GetFontSize() * 2.5f;
+    ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+    dl->AddLine(ImVec2(wp.x + ws.x - 1, wp.y), ImVec2(wp.x + ws.x - 1, wp.y + ws.y), col(C_LINE), 1.5f * scale_);
+    float itemH = ImGui::GetFontSize() * 2.15f;
+    float iw = w - 18 * scale_;
     for (int i = 0; i < 5; i++) {
         bool exit = i == 4;
-        if (exit) ImGui::Dummy(ImVec2(0, 14 * scale_));     // separado del resto
+        if (exit) ImGui::SetCursorPosY(ImGui::GetWindowHeight() - itemH - 14 * scale_);   // Salir, abajo del todo
         bool sel = tab_ == i;
         bool disabled = (i == 1 && !core_.loaded());
         ImVec2 p = ImGui::GetCursorScreenPos();
-        float iw = ImGui::GetContentRegionAvail().x;
         bool hov = ImGui::IsMouseHoveringRect(p, ImVec2(p.x + iw, p.y + itemH));
-        if (sel) {
-            dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_ACCENT, 0.28f), 12 * scale_);
-            dl->AddRectFilled(p, ImVec2(p.x + 6 * scale_, p.y + itemH), col(C_ACCENT), 3 * scale_);
+        float rad = 10 * scale_;
+        if (exit) {
+            dl->AddRect(p, ImVec2(p.x + iw, p.y + itemH), col(ImVec4(0.23f, 0.14f, 0.19f, 1)), rad, 0, 1.5f * scale_);
+            if (hov) dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(ImVec4(0.23f, 0.14f, 0.19f, 0.6f)), rad);
+        } else if (sel) {
+            dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_PANEL2), rad);
+            dl->AddRectFilled(p, ImVec2(p.x + 4 * scale_, p.y + itemH), col(C_ACCENT), 2 * scale_);
         } else if (hov && !disabled) {
-            dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_PANEL2), 12 * scale_);
+            dl->AddRectFilled(p, ImVec2(p.x + iw, p.y + itemH), col(C_PANEL), rad);
         }
         ImGui::PushID(i);
         if (ImGui::InvisibleButton("tab", ImVec2(iw, itemH)) && !disabled) {
@@ -317,27 +327,24 @@ void Menu::drawSidebar(float w) {
         }
         ImGui::PopID();
         ImVec2 ts = ImGui::CalcTextSize(kNames[i]);
-        ImVec4 tc = exit ? ImVec4(1.f, 0.55f, 0.55f, 1) : disabled ? C_MUTED : sel ? C_TEXT : ImVec4(0.75f, 0.78f, 0.85f, 1);
-        dl->AddText(ImVec2(p.x + 24 * scale_, p.y + (itemH - ts.y) * 0.5f), col(tc, disabled ? 0.5f : 1.f), kNames[i]);
-        ImGui::Dummy(ImVec2(0, 6 * scale_));
+        ImVec4 tc = exit ? ImVec4(1.f, 0.61f, 0.61f, 1) : disabled ? C_MUTED : sel ? C_TEXT : ImVec4(0.72f, 0.76f, 0.85f, 1);
+        dl->AddText(ImVec2(p.x + 16 * scale_, p.y + (itemH - ts.y) * 0.5f), col(tc, disabled ? 0.5f : 1.f), kNames[i]);
+        ImGui::Dummy(ImVec2(0, 2 * scale_));
     }
     sidebarFocused_ = ImGui::IsWindowFocused();
-    // Pie de la barra lateral
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFontSize() * 3.2f);
-    ImGui::TextColored(C_MUTED, "%s  " G_L " " G_R, "Secciones");
-    ImGui::TextColored(C_MUTED, "%s", video_.isVulkan() ? "Vulkan 1.4" : "OpenGL");
     ImGui::EndChild();
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
 }
 
 void Menu::drawFooter() {
-    std::string hints = G_A " Aceptar     " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
-    if (tab_ == 0) hints += "     " G_X " Opciones (o mantén pulsado)";
-    if (tab_ == 2) hints += "     " G_ZL " " G_ZR " Categoría     ◀ ▶ Cambiar";
-    hints += "     " G_L " " G_R " Secciones     Stick dcho. Desplazar";
-    if (core_.loaded()) hints += "     " G_MINUS " + " G_PLUS " Menú";
+    std::string hints = G_A " Aceptar    " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
+    if (tab_ == 0) hints += "    " G_X " Opciones";
+    if (tab_ == 2) hints += "    " G_ZL " " G_ZR " Categoría";
+    hints += "    " G_L " " G_R " Secciones";
+    if (core_.loaded()) hints += "    " G_MINUS " + " G_PLUS " Menú";
+    ImGui::PushFont(fontSmall_);
     ImGui::TextColored(C_MUTED, "%s", hints.c_str());
+    ImGui::PopFont();
 }
 
 void Menu::drawToast(float bottomY) {
@@ -363,13 +370,16 @@ void Menu::drawLibrary() {
     if (!scanned_) { roms_ = paths::scanRoms(); scanned_ = true; refreshStatus(true); }
     Config& cfg = Config::get();
     bool grid = !strcmp(cfg.value("library_view"), "grid");
-    ImGui::PushFont(fontTitle_); ImGui::Text("Biblioteca"); ImGui::PopFont();
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::PushFont(fontTitle_); ImGui::Text("Biblioteca"); ImGui::PopFont();
+    ImGui::SameLine(0, 16 * scale_);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (fontTitle_->FontSize - ImGui::GetFontSize()) * 0.5f);
     ImGui::TextColored(C_MUTED, "%zu juegos", roms_.size());
     std::string cm = covers::lastMessage();
     if (!cm.empty()) { ImGui::SameLine(); ImGui::TextColored(C_MUTED, "·  %s", cm.c_str()); }
     const char* viewLbl = grid ? "Ver en lista" : "Ver portadas";
-    float bw1 = ImGui::CalcTextSize(viewLbl).x + 36 * scale_, bw2 = ImGui::CalcTextSize("Actualizar").x + 36 * scale_;
+    float bw1 = ImGui::CalcTextSize(viewLbl).x + ImGui::GetStyle().FramePadding.x * 2,
+          bw2 = ImGui::CalcTextSize("Actualizar").x + ImGui::GetStyle().FramePadding.x * 2;
     ImGui::SameLine(rightEdge - bw1 - bw2 - 12 * scale_);
     if (ImGui::Button(viewLbl)) cfg.setIndex("library_view", grid ? 1 : 0);
     ImGui::SameLine();
@@ -398,11 +408,11 @@ void Menu::drawLibrary() {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImGuiIO& io = ImGui::GetIO();
     u64 d = input_.down();
-    int cols = grid ? 4 : 1;               // 4 por fila: más aire y portadas más grandes
-    float gap = 28 * scale_;
+    int cols = grid ? 5 : 1;               // 5 por fila con la letra más pequeña
+    float gap = 22 * scale_;
     float availW = ImGui::GetContentRegionAvail().x;
     float cardW = grid ? (availW - gap * (cols - 1)) / cols : availW;
-    float coverH = grid ? cardW : ImGui::GetFontSize() * 2.6f;
+    float coverH = grid ? cardW : ImGui::GetFontSize() * 2.4f;
     float cardH = coverH;
     for (size_t i = 0; i < roms_.size(); i++) {
         const std::string& r = roms_[i];
@@ -411,8 +421,9 @@ void Menu::drawLibrary() {
         if (grid && i % cols == 0) {
             float th = 0;
             for (size_t k = i; k < roms_.size() && k < i + cols; k++)
-                th = std::max(th, ImGui::CalcTextSize(paths::stem(roms_[k]).c_str(), nullptr, false, cardW - 8 * scale_).y);
-            cardH = coverH + th + 22 * scale_;
+                th = std::max(th, fontSmall_->CalcTextSizeA(fontSmall_->FontSize, FLT_MAX, cardW - 8 * scale_,
+                                                             paths::stem(roms_[k]).c_str()).y);
+            cardH = coverH + th + 18 * scale_;
         }
         ImGui::PushID((int)i);
         if (grid && i % cols) ImGui::SameLine(0, gap);
@@ -436,8 +447,8 @@ void Menu::drawLibrary() {
                 float asp = 1.f;
                 covers::State st;
                 uint64_t tex = covers::get(name, &asp, &st);
-                if (focused) dl->AddRectFilled(ImVec2(p.x - 6 * scale_, p.y - 6 * scale_), ImVec2(p.x + cardW + 6 * scale_, p.y + cardH),
-                                               col(C_ACCENT, 0.35f), rad + 4 * scale_);
+                if (focused) dl->AddRect(ImVec2(p.x - 5 * scale_, p.y - 5 * scale_), ImVec2(p.x + cardW + 5 * scale_, p.y + coverH + 5 * scale_),
+                                         col(C_ACCENT), rad + 4 * scale_, 0, 3 * scale_);
                 if (tex) {
                     // Encaja la portada en el cuadro sin deformarla
                     float bw = cardW, bh = coverH;
@@ -460,13 +471,13 @@ void Menu::drawLibrary() {
                         dl->AddText(ImVec2(p.x + 12 * scale_, p.y + coverH - ImGui::GetFontSize() - 10 * scale_), col(C_MUTED), "Buscando portada...");
                 }
                 // Insignia de formato
-                ImVec2 es = ImGui::CalcTextSize(ext.c_str());
-                ImVec2 b0(p.x + 10 * scale_, p.y + 10 * scale_);
-                dl->AddRectFilled(b0, ImVec2(b0.x + es.x + 16 * scale_, b0.y + es.y + 6 * scale_), col(ImVec4(0, 0, 0, 0.6f)), 8 * scale_);
-                dl->AddText(ImVec2(b0.x + 8 * scale_, b0.y + 3 * scale_), col(C_TEXT), ext.c_str());
+                ImVec2 es = fontSmall_->CalcTextSizeA(fontSmall_->FontSize, FLT_MAX, 0, ext.c_str());
+                ImVec2 b0(p.x + 8 * scale_, p.y + 8 * scale_);
+                dl->AddRectFilled(b0, ImVec2(b0.x + es.x + 12 * scale_, b0.y + es.y + 4 * scale_), col(ImVec4(0, 0, 0, 0.6f)), 6 * scale_);
+                dl->AddText(fontSmall_, fontSmall_->FontSize, ImVec2(b0.x + 6 * scale_, b0.y + 2 * scale_), col(C_TEXT), ext.c_str());
                 // Título completo (la altura de la fila ya se ajustó a él)
-                dl->AddText(nullptr, 0.f, ImVec2(p.x + 4 * scale_, p.y + coverH + 10 * scale_), col(focused ? C_TEXT : ImVec4(0.80f, 0.83f, 0.90f, 1)),
-                            name.c_str(), nullptr, cardW - 8 * scale_);
+                dl->AddText(fontSmall_, fontSmall_->FontSize, ImVec2(p.x + 4 * scale_, p.y + coverH + 8 * scale_),
+                            col(focused ? C_TEXT : ImVec4(0.76f, 0.80f, 0.88f, 1)), name.c_str(), nullptr, cardW - 8 * scale_);
             } else {
                 dl->AddRectFilled(p, ImVec2(p.x + cardW, p.y + cardH), col(focused ? C_PANEL2 : C_PANEL), 12 * scale_);
                 float asp = 1.f;
@@ -546,7 +557,7 @@ void Menu::drawGame() {
     Config& c = Config::get();
     int slot = c.index("state_slot");
     float W = ImGui::GetContentRegionAvail().x, gap = ImGui::GetStyle().ItemSpacing.x;
-    float half = (W - gap) * 0.5f, bh = ImGui::GetFontSize() * 2.4f;
+    float half = (W - gap) * 0.5f, bh = ImGui::GetFontSize() * 2.2f;
     char buf[96];
 
     if (BigButton("Continuar", C_ACCENT, W, bh * 1.15f)) open = false;
@@ -622,7 +633,7 @@ void Menu::drawSettings() {
         if (i) ImGui::SameLine(0, 8 * scale_);
         if (i && ImGui::GetCursorPosX() + ImGui::CalcTextSize(cats[i].c_str()).x + 40 * scale_ > chipsEdge)
             ImGui::NewLine();
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14 * scale_, 8 * scale_));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12 * scale_, 6 * scale_));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 30 * scale_);
         if (BigButton(cats[i].c_str(), i == cat_ ? C_ACCENT : C_PANEL, 0, 0)) cat_ = i;
         ImGui::PopStyleVar(2);
@@ -633,14 +644,14 @@ void Menu::drawSettings() {
     if (ImGui::Button(catReset.c_str())) { confirmOpen_ = true; confirmCat_ = cats[cat_]; }
 
     // Lista de opciones
-    float helpH = ImGui::GetFontSize() * 3.6f;
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, C_PANEL);
+    float helpH = fontSmall_->FontSize * 3.9f;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
     ImGui::BeginChild("opts", ImVec2(0, -helpH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
     touchScroll();
     help_ = "";
     ImGuiIO& io = ImGui::GetIO();
-    float rowH = ImGui::GetFontSize() * 2.6f;
+    float rowH = ImGui::GetFontSize() * 2.25f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     for (auto& o : c.defs()) {
         if (cats[cat_] != o.category) continue;
@@ -653,6 +664,7 @@ void Menu::drawSettings() {
         bool foc = (ImGui::IsItemFocused() && io.NavVisible) || ImGui::IsItemHovered();
         bool viaTouch = act && !io.NavVisible;
         if (foc) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH), col(C_PANEL2), 10 * scale_);
+        else dl->AddLine(ImVec2(p.x + 12 * scale_, p.y + rowH), ImVec2(p.x + w - 12 * scale_, p.y + rowH), col(C_LINE), 1.f);
         float ty = p.y + (rowH - ImGui::GetFontSize()) * 0.5f;
         std::string label = std::string(c.isOverridden(o.id) ? "★ " : "") + o.label;
         dl->AddText(ImVec2(p.x + 16 * scale_, ty), col(C_TEXT), label.c_str());
@@ -665,7 +677,7 @@ void Menu::drawSettings() {
         ImVec2 vs = ImGui::CalcTextSize(val.c_str());
         ImVec2 v1(p.x + w - 12 * scale_, p.y + rowH * 0.5f + vs.y * 0.5f + 6 * scale_);
         ImVec2 v0(v1.x - vs.x - 28 * scale_, p.y + rowH * 0.5f - vs.y * 0.5f - 6 * scale_);
-        dl->AddRectFilled(v0, v1, col(foc ? C_ACCENT : ImVec4(0.20f, 0.22f, 0.30f, 1), foc ? 0.9f : 1.f), 30 * scale_);
+        dl->AddRectFilled(v0, v1, col(foc ? C_ACCENT : C_PANEL2, foc ? 0.9f : 1.f), 30 * scale_);
         dl->AddText(ImVec2(v0.x + 14 * scale_, v0.y + 6 * scale_), col(C_TEXT), val.c_str());
         if ((ImGui::IsItemFocused() || ImGui::IsItemHovered()) && *o.help) help_ = o.help;
         if (ImGui::IsItemFocused() && io.NavVisible && !confirmOpen_) {
@@ -684,9 +696,11 @@ void Menu::drawSettings() {
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0, 2 * scale_));
+    ImGui::PushFont(fontSmall_);
     ImGui::PushTextWrapPos(0);
     ImGui::TextColored(C_MUTED, "%s", *help_ ? help_ : "★ = ajuste propio de este juego.  Los cambios se guardan solos.");
     ImGui::PopTextWrapPos();
+    ImGui::PopFont();
 }
 
 void Menu::drawConfirm() {
@@ -729,7 +743,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.6.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.7.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
@@ -771,18 +785,22 @@ void Menu::draw() {
     if (core_.loaded())
         ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, col(ImVec4(0, 0, 0, 0.55f), e));
 
-    float m = 0.035f;
-    ImVec2 pos(io.DisplaySize.x * m, io.DisplaySize.y * m + (1.f - e) * 40 * scale_);
-    ImVec2 size(io.DisplaySize.x * (1 - 2 * m), io.DisplaySize.y * (1 - 2 * m));
+    // A pantalla completa: aprovecha todo el panel (antes había un marco del 3,5 %)
+    ImVec2 pos(0, (1.f - e) * 24 * scale_);
+    ImVec2 size(io.DisplaySize.x, io.DisplaySize.y);
     ImGui::SetNextWindowPos(pos);
     ImGui::SetNextWindowSize(size);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, e);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28 * scale_, 22 * scale_));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26 * scale_, 8 * scale_));
     ImGui::PushFont(fontBody_);
     ImGui::Begin("PSX-K2", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
     drawHeader();
-    ImGui::Dummy(ImVec2(0, 6 * scale_));
+    {   // línea bajo la cabecera, de borde a borde
+        ImVec2 wp = ImGui::GetWindowPos(); float y = ImGui::GetCursorScreenPos().y;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(wp.x, y), ImVec2(wp.x + size.x, y), col(C_LINE), 1.5f * scale_);
+    }
+    ImGui::Dummy(ImVec2(0, 4 * scale_));
 
     if (wantTab_ >= 0 && wantTab_ != tab_) {
         if (!(wantTab_ == 1 && !core_.loaded())) { tab_ = wantTab_; tabAnim_ = 0.f; ImGui::SetNavCursorVisible(true); }
@@ -790,12 +808,12 @@ void Menu::draw() {
     }
     wantTab_ = -1;
 
-    float footerH = ImGui::GetFontSize() * 1.9f;
+    float footerH = fontSmall_->FontSize * 2.0f;
     float bodyH = ImGui::GetContentRegionAvail().y - footerH;
-    float sideW = size.x * 0.20f;
+    float sideW = std::max(size.x * 0.15f, ImGui::CalcTextSize("Información").x + 70 * scale_);
     ImGui::BeginChild("bodyrow", ImVec2(0, bodyH));
     drawSidebar(sideW);
-    ImGui::SameLine(0, 22 * scale_);
+    ImGui::SameLine(0, 26 * scale_);
     float te = easeOut(tabAnim_);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, e * (0.35f + 0.65f * te));
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (1.f - te) * 24 * scale_);
@@ -809,8 +827,11 @@ void Menu::draw() {
     ImGui::PopStyleVar();
     ImGui::EndChild();
 
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, 2 * scale_));
+    {
+        ImVec2 wp = ImGui::GetWindowPos(); float y = ImGui::GetCursorScreenPos().y;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(wp.x, y), ImVec2(wp.x + size.x, y), col(C_LINE), 1.5f * scale_);
+    }
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + fontSmall_->FontSize * 0.45f);
     drawFooter();
     ImGui::End();
     drawToast(io.DisplaySize.y - footerH - 40 * scale_);
@@ -840,7 +861,10 @@ void Menu::drawOsd() {
     ImGui::PushFont(fontBody_);
     if (fps) {
         char b[48];
+        // FPS = frames emulados; Hz = imágenes que recibe la pantalla (120 con BFI o frames intermedios)
+        unsigned hz = video_.presentHz();
         if (turbo) snprintf(b, sizeof b, "\u25B6\u25B6 x3   %.0f FPS", core_.fps());
+        else if (hz != 60) snprintf(b, sizeof b, "%.0f FPS  \u00B7  %u Hz", core_.fps(), hz);
         else snprintf(b, sizeof b, "%.0f FPS", core_.fps());
         ImVec2 ts = ImGui::CalcTextSize(b);
         ImDrawList* dl = ImGui::GetForegroundDrawList();

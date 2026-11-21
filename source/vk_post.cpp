@@ -9,6 +9,11 @@
 #include "spv_present_frag.h"
 #include "spv_taa_frag.h"
 #include "spv_blend_frag.h"
+#include "spv_scalefx0_frag.h"
+#include "spv_scalefx1_frag.h"
+#include "spv_scalefx2_frag.h"
+#include "spv_scalefx3_frag.h"
+#include "spv_scalefx4_frag.h"
 #include <switch.h>
 
 struct PostPC { float rcp[2]; float mode; float blend; };
@@ -52,6 +57,35 @@ static VkPipeline makePipeline(VkDevice dev, VkRenderPass rp, VkPipelineLayout l
     return p;
 }
 
+// Render pass de una imagen propia: se sobrescribe entera y queda lista para leerse en un shader
+static VkRenderPass makeTargetPass(VkDevice dev, VkFormat fmt) {
+    VkAttachmentDescription att = {};
+    att.format = fmt; att.samples = VK_SAMPLE_COUNT_1_BIT;
+    att.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; att.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkAttachmentReference ref = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription sub = {}; sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sub.colorAttachmentCount = 1; sub.pColorAttachments = &ref;
+    VkSubpassDependency dep[2] = {};
+    dep[0].srcSubpass = VK_SUBPASS_EXTERNAL; dep[0].dstSubpass = 0;
+    dep[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    dep[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dep[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dep[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dep[1].srcSubpass = 0; dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dep[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dep[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    VkRenderPassCreateInfo rpi = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    rpi.attachmentCount = 1; rpi.pAttachments = &att; rpi.subpassCount = 1; rpi.pSubpasses = &sub;
+    rpi.dependencyCount = 2; rpi.pDependencies = dep;
+    VkRenderPass rp = VK_NULL_HANDLE;
+    vkCreateRenderPass(dev, &rpi, nullptr, &rp);
+    return rp;
+}
+
 bool VkPresenter::ensurePost() {
     if (postFailed_ || !uiReady_ || !uiPass_) return false;
     if (postReady_ && postForPass_ == uiPass_) return true;
@@ -76,35 +110,13 @@ bool VkPresenter::ensurePost() {
     pl.setLayoutCount = 1; pl.pSetLayouts = &postDsl_; pl.pushConstantRangeCount = 1; pl.pPushConstantRanges = &pr;
     vkCreatePipelineLayout(dev_, &pl, nullptr, &postLayout_);
     for (auto& pool : postPool_) {
-        VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32};
+        VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 160};
         VkDescriptorPoolCreateInfo dp = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        dp.maxSets = 16; dp.poolSizeCount = 1; dp.pPoolSizes = &ps;
+        dp.maxSets = 80;   // ScaleFX + TAA + copia + pantalla, hasta 3 veces por frame en avance rápido dp.poolSizeCount = 1; dp.pPoolSizes = &ps;
         vkCreateDescriptorPool(dev_, &dp, nullptr, &pool);
     }
     // Render pass del historial TAA: se sobrescribe entero y queda listo para leerse
-    VkAttachmentDescription att = {};
-    att.format = VK_FORMAT_R8G8B8A8_UNORM; att.samples = VK_SAMPLE_COUNT_1_BIT;
-    att.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; att.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    att.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; att.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkAttachmentReference ref = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkSubpassDescription sub = {}; sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    sub.colorAttachmentCount = 1; sub.pColorAttachments = &ref;
-    VkSubpassDependency dep[2] = {};
-    dep[0].srcSubpass = VK_SUBPASS_EXTERNAL; dep[0].dstSubpass = 0;
-    dep[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    dep[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dep[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dep[1].srcSubpass = 0; dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dep[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    VkRenderPassCreateInfo rpi = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    rpi.attachmentCount = 1; rpi.pAttachments = &att; rpi.subpassCount = 1; rpi.pSubpasses = &sub;
-    rpi.dependencyCount = 2; rpi.pDependencies = dep;
-    vkCreateRenderPass(dev_, &rpi, nullptr, &histPass_);
+    histPass_ = makeTargetPass(dev_, VK_FORMAT_R8G8B8A8_UNORM);
 
     vsMod_ = makeModule(dev_, spv_fullscreen_vert, sizeof(spv_fullscreen_vert));
     fsPresent_ = makeModule(dev_, spv_present_frag, sizeof(spv_present_frag));
@@ -133,9 +145,13 @@ void VkPresenter::collectHistory() {
 }
 
 bool VkPresenter::createTarget(Hist& hh, uint32_t w, uint32_t h) {
+    return createTargetFmt(hh, w, h, VK_FORMAT_R8G8B8A8_UNORM, histPass_);
+}
+
+bool VkPresenter::createTargetFmt(Hist& hh, uint32_t w, uint32_t h, VkFormat fmt, VkRenderPass rp) {
     hh = {};
     VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-    ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM; ii.extent = {w, h, 1};
+    ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt; ii.extent = {w, h, 1};
     ii.mipLevels = 1; ii.arrayLayers = 1; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
     ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     if (vkCreateImage(dev_, &ii, nullptr, &hh.img) != VK_SUCCESS) { hh.img = VK_NULL_HANDLE; return false; }
@@ -147,11 +163,11 @@ bool VkPresenter::createTarget(Hist& hh, uint32_t w, uint32_t h) {
     }
     vkBindImageMemory(dev_, hh.img, hh.mem, 0);
     VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    vi.image = hh.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+    vi.image = hh.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     vkCreateImageView(dev_, &vi, nullptr, &hh.view);
     VkFramebufferCreateInfo fi = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-    fi.renderPass = histPass_; fi.attachmentCount = 1; fi.pAttachments = &hh.view;
+    fi.renderPass = rp; fi.attachmentCount = 1; fi.pAttachments = &hh.view;
     fi.width = w; fi.height = h; fi.layers = 1;
     vkCreateFramebuffer(dev_, &fi, nullptr, &hh.fb);
     return true;
@@ -248,6 +264,12 @@ void VkPresenter::destroyPost() {
     if (pipeCopy_) vkDestroyPipeline(dev_, pipeCopy_, nullptr);
     if (fsBlend_) vkDestroyShaderModule(dev_, fsBlend_, nullptr);
     pipeBlend_ = pipeCopy_ = VK_NULL_HANDLE; fsBlend_ = VK_NULL_HANDLE;
+    for (auto& hh : sfx_) if (hh.img) { hh.freeAt = 0; histGrave_.push_back(hh); hh = {}; }
+    sfxW_ = sfxH_ = 0;
+    for (auto& p : pipeSfx_) { if (p) vkDestroyPipeline(dev_, p, nullptr); p = VK_NULL_HANDLE; }
+    for (auto& m : fsSfx_) { if (m) vkDestroyShaderModule(dev_, m, nullptr); m = VK_NULL_HANDLE; }
+    if (sfxPass16_) vkDestroyRenderPass(dev_, sfxPass16_, nullptr);
+    sfxPass16_ = VK_NULL_HANDLE; sfxFailed_ = false;
     for (auto& h : histGrave_) {
         vkDestroyFramebuffer(dev_, h.fb, nullptr); vkDestroyImageView(dev_, h.view, nullptr);
         vkDestroyImage(dev_, h.img, nullptr); vkFreeMemory(dev_, h.mem, nullptr);
@@ -339,4 +361,66 @@ bool VkPresenter::presentInterpLatest() {
     post_ = fgPost_;
     pendingPost_ = true;
     return true;
+}
+
+// ------------------------------------------------------------------ ScaleFX
+// Pasada genérica a una imagen propia (fullscreen triangle). rx, ry = 1 / tamaño de la imagen de origen.
+void VkPresenter::recordPass(VkPipeline pipe, VkRenderPass rp, Hist& dst, uint32_t w, uint32_t h, VkImageView a,
+                             VkImageLayout la, VkImageView b, VkImageLayout lb, float rx, float ry) {
+    VkDescriptorSet set = allocPostSet(a, la, b, lb, sampNearest_);
+    if (!set) return;
+    VkCommandBuffer cb = cmd_[frame_];
+    VkRenderPassBeginInfo rb = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rb.renderPass = rp; rb.framebuffer = dst.fb; rb.renderArea.extent = {w, h};
+    vkCmdBeginRenderPass(cb, &rb, VK_SUBPASS_CONTENTS_INLINE);
+    VkViewport vp = {0, 0, (float)w, (float)h, 0, 1};
+    VkRect2D sc = {{0, 0}, {w, h}};
+    vkCmdSetViewport(cb, 0, 1, &vp); vkCmdSetScissor(cb, 0, 1, &sc);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &set, 0, nullptr);
+    PostPC pc = {{rx, ry}, 0.f, 1.f};
+    vkCmdPushConstants(cb, postLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
+    vkCmdDraw(cb, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cb);
+}
+
+bool VkPresenter::ensureSfx(uint32_t w, uint32_t h) {
+    if (sfxFailed_ || !postReady_) return false;
+    if (!pipeSfx_[0]) {
+        // Las dos primeras pasadas guardan distancias de color: necesitan coma flotante (como en RetroArch)
+        sfxPass16_ = makeTargetPass(dev_, VK_FORMAT_R16G16B16A16_SFLOAT);
+        static const struct { const uint32_t* code; size_t size; } src[5] = {
+            {spv_scalefx0_frag, sizeof(spv_scalefx0_frag)}, {spv_scalefx1_frag, sizeof(spv_scalefx1_frag)},
+            {spv_scalefx2_frag, sizeof(spv_scalefx2_frag)}, {spv_scalefx3_frag, sizeof(spv_scalefx3_frag)},
+            {spv_scalefx4_frag, sizeof(spv_scalefx4_frag)}};
+        bool ok = sfxPass16_ != VK_NULL_HANDLE;
+        for (int i = 0; i < 5 && ok; i++) {
+            fsSfx_[i] = makeModule(dev_, src[i].code, src[i].size);
+            pipeSfx_[i] = fsSfx_[i] ? makePipeline(dev_, i < 2 ? sfxPass16_ : histPass_, postLayout_, vsMod_, fsSfx_[i]) : VK_NULL_HANDLE;
+            ok = pipeSfx_[i] != VK_NULL_HANDLE;
+        }
+        if (!ok) { sfxFailed_ = true; LOGI("[vk] no se pudo crear ScaleFX; se usa el escalado normal"); return false; }
+        LOGI("[vk] ScaleFX listo");
+    }
+    if (sfx_[4].img && sfxW_ == w && sfxH_ == h) return true;
+    for (auto& old : sfx_) if (old.img) { old.freeAt = frameCount_ + kFrames + 2; histGrave_.push_back(old); old = {}; }
+    sfxW_ = sfxH_ = 0;
+    for (int i = 0; i < 5; i++) {
+        bool ok = i < 2 ? createTargetFmt(sfx_[i], w, h, VK_FORMAT_R16G16B16A16_SFLOAT, sfxPass16_)
+                        : createTarget(sfx_[i], i == 4 ? w * 3 : w, i == 4 ? h * 3 : h);
+        if (!ok) { LOGI("[vk] ScaleFX: sin memoria para %ux%u", w, h); return false; }
+    }
+    sfxW_ = w; sfxH_ = h;
+    LOGI("[vk] ScaleFX %ux%u -> %ux%u", w, h, w * 3, h * 3);
+    return true;
+}
+
+void VkPresenter::recordSfx(VkImageView src, VkImageLayout lay, uint32_t w, uint32_t h) {
+    const VkImageLayout RO = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    float rx = 1.f / w, ry = 1.f / h;
+    recordPass(pipeSfx_[0], sfxPass16_, sfx_[0], w, h, src, lay, src, lay, rx, ry);                     // métrica de color
+    recordPass(pipeSfx_[1], sfxPass16_, sfx_[1], w, h, sfx_[0].view, RO, sfx_[0].view, RO, rx, ry);     // fuerza de esquinas
+    recordPass(pipeSfx_[2], histPass_, sfx_[2], w, h, sfx_[1].view, RO, sfx_[0].view, RO, rx, ry);      // ambigüedades
+    recordPass(pipeSfx_[3], histPass_, sfx_[3], w, h, sfx_[2].view, RO, sfx_[2].view, RO, rx, ry);      // niveles de borde
+    recordPass(pipeSfx_[4], histPass_, sfx_[4], w * 3, h * 3, sfx_[3].view, RO, src, lay, rx, ry);      // salida 3x
 }

@@ -94,5 +94,8 @@ glslangValidator -V --vn spv_fullscreen_vert -o third_party/gen/spv_fullscreen_v
 glslangValidator -V --vn spv_present_frag   -o third_party/gen/spv_present_frag.h   shaders/present.frag
 glslangValidator -V --vn spv_taa_frag       -o third_party/gen/spv_taa_frag.h       shaders/taa.frag
 glslangValidator -V --vn spv_blend_frag     -o third_party/gen/spv_blend_frag.h     shaders/blend.frag
+for i in 0 1 2 3 4; do
+    glslangValidator -V --vn spv_scalefx${i}_frag -o third_party/gen/spv_scalefx${i}_frag.h shaders/scalefx${i}.frag
+done
 
 echo "Listo. Ahora ejecuta: make dist"

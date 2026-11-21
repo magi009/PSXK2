@@ -42,6 +42,7 @@ public:
     void setLive(bool live);
     void extraPresent();
     const char* refreshStatus() const;   // texto para Información
+    unsigned presentHz() const;          // imágenes por segundo que recibe la pantalla
 
     bool isVulkan() const { return vk_ != nullptr; }
     retro_hw_render_interface_vulkan* vkInterface();

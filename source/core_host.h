@@ -44,5 +44,5 @@ private:
     std::vector<unsigned char> srmShadow_;
     unsigned long long lastSrmCheck_ = 0;
     float fps_ = 0; unsigned frames_ = 0; unsigned long long fpsTick_ = 0;
-    unsigned fpsSerial_ = 0; unsigned long long loadTick_ = 0;
+    unsigned fpsSerial_ = 0; unsigned long long loadTick_ = 0, lastRunTick_ = 0;
 };

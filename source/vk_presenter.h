@@ -45,8 +45,11 @@ public:
     // mode: 0 = 60 Hz normal, 1 = VRR a la frecuencia del juego, 2 = BFI, 3 = frames intermedios.
     // Se llama cada frame: aplica las tasas a la ventana solo si cambian y comprueba si la pantalla va a 120 Hz.
     void updateRefresh(int mode, unsigned gameFps, bool vsync);
-    bool doublePresent() const { return doublePresent_; }   // 2 presentaciones por frame emulado
+    bool doublePresent() const { return doublePresent_; }
+    // ScaleFX (Sp00kyFox): suavizado de bordes para pixel art, 5 pasadas, salida 3x. Pensado para resolución interna 1x.
+    void setScaleFx(bool on) { sfxOn_ = on; }   // 2 presentaciones por frame emulado
     int refreshMode() const { return refreshMode_; }
+    unsigned presentHz() const { return doublePresent_ ? appliedFps_ * 2 : refreshMode_ == 1 ? appliedFps_ : 60; }
     void setInterp(bool live);                              // juego corriendo a velocidad normal, sin menú
     bool presentInterpLatest();                             // frame extra: el último frame real
     // Antialiasing de posprocesado: FXAA y/o TAA (temporal). El MSAA lo hace el núcleo.
@@ -160,6 +163,17 @@ private:
     int histCur_ = 0;
     bool histValid_ = false;
     bool createTarget(Hist& t, uint32_t w, uint32_t h);
+    bool createTargetFmt(Hist& t, uint32_t w, uint32_t h, VkFormat fmt, VkRenderPass rp);
+    void recordPass(VkPipeline pipe, VkRenderPass rp, Hist& dst, uint32_t w, uint32_t h, VkImageView a, VkImageLayout la,
+                    VkImageView b, VkImageLayout lb, float rx, float ry);
+    bool ensureSfx(uint32_t w, uint32_t h);
+    void recordSfx(VkImageView src, VkImageLayout lay, uint32_t w, uint32_t h);
+    Hist sfx_[5] = {};                  // métricas (16F) x2, datos x2, salida 3x
+    uint32_t sfxW_ = 0, sfxH_ = 0;
+    VkRenderPass sfxPass16_ = VK_NULL_HANDLE;
+    VkPipeline pipeSfx_[5] = {};
+    VkShaderModule fsSfx_[5] = {};
+    bool sfxOn_ = false, sfxFailed_ = false;
     bool ensureFg(uint32_t w, uint32_t h);
     void recordCopy(VkImageView src, VkImageLayout lay, Hist& dst, uint32_t w, uint32_t h);
     int refreshMode_ = 0, appliedMode_ = -1;

@@ -275,7 +275,8 @@ bool Video::linearFilter() const { return strcmp(Config::get().value("upscale_sh
 void Video::draw(GLuint tex, unsigned w, unsigned h, unsigned texW, unsigned texH, bool flip) {
     Config& c = Config::get();
     const char* sh = c.value("upscale_shader");
-    int p = !strcmp(sh, "nearest") ? 0 : !strcmp(sh, "bilinear") ? 1 : !strcmp(sh, "sharp") ? 2 : !strcmp(sh, "bicubic") ? 3 : 4;
+    int p = !strcmp(sh, "nearest") ? 0 : !strcmp(sh, "bilinear") ? 1 : !strcmp(sh, "sharp") || !strcmp(sh, "scalefx") ? 2
+          : !strcmp(sh, "bicubic") ? 3 : 4;   // ScaleFX solo existe en Vulkan: en OpenGL, Sharp Bilinear
     if (strcmp(c.value("aa_post"), "off")) p = 5;   // en OpenGL: FXAA (el TAA solo existe en Vulkan)
 
     computeViewport(w, h);
@@ -314,6 +315,7 @@ void Video::presentHw(unsigned w, unsigned h) {
     if (vk_) {
         const char* aa = Config::get().value("aa_post");
         vk_->setAntialiasing(!strcmp(aa, "fxaa") || !strcmp(aa, "fxaa_taa"), !strcmp(aa, "taa") || !strcmp(aa, "fxaa_taa"));
+        vk_->setScaleFx(!strcmp(Config::get().value("upscale_shader"), "scalefx"));
         computeViewport(w, h);
         vk_->presentCore(w, h, vpX_, vpY_, vpW_, vpH_, linearFilter());
         return;
@@ -378,6 +380,8 @@ void Video::setLive(bool live) {
     live_ = live;
     if (vk_) vk_->setInterp(live);
 }
+
+unsigned Video::presentHz() const { return vk_ ? vk_->presentHz() : 60; }
 
 const char* Video::refreshStatus() const {
     if (!vk_) return "60 Hz";

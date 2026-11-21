@@ -336,6 +336,9 @@ void CoreHost::runFrame(bool fastForward) {
 
     frames_++;
     unsigned long long now = armGetSystemTick();
+    // Tras una pausa (menú abierto) se empieza a medir de nuevo: antes salía una lectura falsa (3 fps)
+    if (lastRunTick_ && armTicksToNs(now - lastRunTick_) > 200000000ULL) { fpsTick_ = 0; frames_ = 1; }
+    lastRunTick_ = now;
     if (!fpsTick_) fpsTick_ = now;
     double secs = armTicksToNs(now - fpsTick_) / 1e9;
     if (secs >= 1.0) { fps_ = (float)(frames_ * n / secs); frames_ = 0; fpsTick_ = now; fpsSerial_++; }

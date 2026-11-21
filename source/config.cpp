@@ -51,9 +51,11 @@ Config::Config() {
         "FPS y avisos; en 2D puede mostrar bordes extra.", false},
     {"upscale_shader", "Escalador / filtro de salida", C_VIDEO, nullptr,
         {{"Nearest (píxel nítido)", "nearest"}, {"Bilineal", "bilinear"}, {"Sharp Bilinear", "sharp"},
-         {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}}, 2,
-        "Filtro que lleva la imagen renderizada al tamaño de pantalla. Con Vulkan, Sharp/Bicúbico/CRT usan "
-        "bilineal por ahora (los shaders completos están en el backend OpenGL).", false},
+         {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}, {"ScaleFX (pixel art 2D)", "scalefx"}}, 2,
+        "Filtro que lleva la imagen renderizada al tamaño de pantalla. ScaleFX redondea los bordes de los "
+        "píxeles sin desenfocar ni inventar colores: ideal para juegos 2D (Castlevania SOTN, Mega Man X4...) con "
+        "resolución interna 1x; a 4x u 8x no se aplica. Con Vulkan, Sharp/Bicúbico/CRT usan bilineal por ahora; "
+        "en OpenGL ScaleFX usa Sharp Bilinear.", false},
 
     {"depth", "Profundidad de color", C_VIDEO, "beetle_psx_hw_depth",
         {{"16 bpp (nativa)", "16bpp(native)"}, {"32 bpp (sin bandas)", "32bpp"}}, 1, "", false},
