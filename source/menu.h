@@ -3,6 +3,7 @@
 #include <vector>
 
 class Video; class Input; class CoreHost;
+struct OptionDef;
 struct ImFont;
 
 // Interfaz con Dear ImGui: biblioteca, juego (pausa), ajustes e información.
@@ -99,6 +100,6 @@ private:
     std::string keepId_, keepFrom_, keepTo_;
     int keepOldIdx_ = 0;
     bool keepHadOverride_ = false, keepGameScope_ = false;
-    u64 keepDeadline_ = 0;
+    unsigned long long keepDeadline_ = 0;
     std::string confirmCat_;      // vacío = todas
 };
