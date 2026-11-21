@@ -285,6 +285,13 @@ const char* Config::value(const char* id) const {
 
 bool Config::isOverridden(const char* id) const { return hasGame() && game_.count(id); }
 
+void Config::removeOverride(const char* id) {
+    const OptionDef* d = find(id);
+    if (!d || !game_.erase(id)) return;
+    if (d->coreKey || !strcmp(id, "screen_mode")) coreDirty_ = true;
+    if (!d->coreKey) feDirty_ = true;
+}
+
 void Config::setIndex(const char* id, int idx) {
     const OptionDef* d = find(id);
     if (!d || idx < 0 || idx >= (int)d->choices.size()) return;

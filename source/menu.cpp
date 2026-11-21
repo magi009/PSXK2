@@ -65,7 +65,7 @@ bool Menu::init() {
     if (ranges.empty()) {
         ImFontGlyphRangesBuilder b;
         b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-        b.AddText("\u25C0\u25B6\u2605\u2026");
+        b.AddText("\u25C0\u25B6\u2605\u2026\u2192\u25CF");
         b.BuildRanges(&ranges);
     }
     PlFontData std_, ext;
@@ -217,7 +217,7 @@ void Menu::feedInput() {
     }
 
     u64 d = input_.down();
-    if (!confirmOpen_ && !gameOptsOpen_) {
+    if (!confirmOpen_ && !gameOptsOpen_ && !keepOpen_) {
         if (d & HidNpadButton_R) wantTab_ = (tab_ + 1) % 4;
         if (d & HidNpadButton_L) wantTab_ = (tab_ + 3) % 4;
     }
@@ -608,7 +608,7 @@ void Menu::drawSettings() {
     u64 d = input_.down();
     auto cats = c.categories();
     if (cat_ >= (int)cats.size()) cat_ = 0;
-    if (!confirmOpen_) {
+    if (!confirmOpen_ && !keepOpen_) {
         if (d & HidNpadButton_ZR) cat_ = (cat_ + 1) % cats.size();
         if (d & HidNpadButton_ZL) cat_ = (cat_ + (int)cats.size() - 1) % cats.size();
     }
@@ -698,15 +698,15 @@ void Menu::drawSettings() {
         dl->AddRectFilled(v0, v1, col(foc ? C_ACCENT : C_PANEL2, foc ? 0.9f : 1.f), 30 * scale_);
         dl->AddText(ImVec2(v0.x + 14 * scale_, v0.y + 6 * scale_), col(C_TEXT), val.c_str());
         if ((ImGui::IsItemFocused() || ImGui::IsItemHovered()) && *o.help) help_ = o.help;
-        if (ImGui::IsItemFocused() && io.NavVisible && !confirmOpen_) {
-            if (d & (HidNpadButton_Right | HidNpadButton_StickLRight)) c.setIndex(o.id, (idx + 1) % n);
-            if (d & (HidNpadButton_Left | HidNpadButton_StickLLeft)) c.setIndex(o.id, (idx + n - 1) % n);
+        if (ImGui::IsItemFocused() && io.NavVisible && !confirmOpen_ && !keepOpen_) {
+            if (d & (HidNpadButton_Right | HidNpadButton_StickLRight)) changeOption(o, (idx + 1) % n);
+            if (d & (HidNpadButton_Left | HidNpadButton_StickLLeft)) changeOption(o, (idx + n - 1) % n);
         }
         if (act) {
             // Táctil: tocar la mitad izquierda de la píldora resta, la derecha suma
             float mx = io.MouseClickedPos[0].x;
             bool left = viaTouch && mx >= v0.x && mx < (v0.x + v1.x) * 0.5f;
-            c.setIndex(o.id, left ? (idx + n - 1) % n : (idx + 1) % n);
+            changeOption(o, left ? (idx + n - 1) % n : (idx + 1) % n);
         }
         ImGui::PopID();
     }
@@ -719,6 +719,71 @@ void Menu::drawSettings() {
     ImGui::TextColored(C_MUTED, "%s", *help_ ? help_ : "★ = ajuste propio de este juego.  Los cambios se guardan solos.");
     ImGui::PopTextWrapPos();
     ImGui::PopFont();
+}
+
+// Cambia una opción. Si es de resolución o de modo de pantalla, se aplica y se pide confirmación:
+// "Conservar cambios" (A) o revertir con B o al acabar la cuenta atrás de 10 s.
+void Menu::changeOption(const OptionDef& o, int idx) {
+    Config& c = Config::get();
+    static const char* kWatch[] = {"output_res", "internal_res", "screen_mode"};
+    bool watch = false;
+    for (auto* w : kWatch) if (!strcmp(o.id, w)) watch = true;
+    if (!watch || keepOpen_) { c.setIndex(o.id, idx); return; }
+    int old = c.index(o.id);
+    if (old == idx) return;
+    keepId_ = o.id; keepOldIdx_ = old;
+    keepFrom_ = o.choices[old].label; keepTo_ = o.choices[idx].label;
+    keepGameScope_ = c.editScope == Scope::Game && core_.loaded();
+    keepHadOverride_ = c.isOverridden(o.id);
+    c.setIndex(o.id, idx);
+    keepOpen_ = true;
+    keepDeadline_ = armGetSystemTick() + armNsToTicks(10000000000ULL);
+}
+
+void Menu::drawKeepChanges() {
+    if (keepOpen_ && !ImGui::IsPopupOpen("keep")) ImGui::OpenPopup("keep");
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), 0, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.42f, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(30 * scale_, 26 * scale_));
+    if (ImGui::BeginPopupModal("keep", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
+        Config& c = Config::get();
+        const OptionDef* d = c.find(keepId_.c_str());
+        u64 now = armGetSystemTick();
+        double left = now >= keepDeadline_ ? 0.0 : armTicksToNs(keepDeadline_ - now) / 1e9;
+        ImGui::PushFont(fontTitle_); ImGui::Text("¿Conservar los cambios?"); ImGui::PopFont();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextColored(C_MUTED, "%s: %s  \u2192  %s", d ? d->label : keepId_.c_str(), keepFrom_.c_str(), keepTo_.c_str());
+        ImGui::Text("Se volverá a lo anterior en %d s si no confirmas.", (int)ceil(left));
+        ImGui::PopTextWrapPos();
+        // Barra de cuenta atrás
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float W = ImGui::GetContentRegionAvail().x, bh = 6 * scale_;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, ImVec2(p.x + W, p.y + bh), col(C_PANEL2), bh);
+        dl->AddRectFilled(p, ImVec2(p.x + W * (float)(left / 10.0), p.y + bh), col(C_ACCENT), bh);
+        ImGui::Dummy(ImVec2(W, bh + 10 * scale_));
+        float w = (W - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        bool revert = (input_.down() & HidNpadButton_B) != 0 || left <= 0.0;
+        bool keep = false;
+        if (BigButton(G_B "  Revertir", C_PANEL2, w, 0)) revert = true;
+        ImGui::SameLine();
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        if (BigButton(G_A "  Conservar cambios", C_ACCENT, w, 0)) keep = true;
+        if (revert && !keep && d) {
+            Scope prev = c.editScope;
+            c.editScope = keepGameScope_ ? Scope::Game : Scope::Global;
+            if (keepGameScope_ && !keepHadOverride_) c.removeOverride(keepId_.c_str());
+            else c.setIndex(keepId_.c_str(), keepOldIdx_);
+            c.editScope = prev;
+            toast(std::string(d->label) + ": se restauró " + keepFrom_);
+        } else if (keep) {
+            toast("Cambios conservados");
+        }
+        if (revert || keep) { keepOpen_ = false; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar();
 }
 
 void Menu::drawConfirm() {
@@ -763,7 +828,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.8.1  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.8.2  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
@@ -863,7 +928,7 @@ void Menu::draw() {
     tabAnim_ = std::min(1.f, tabAnim_ + io.DeltaTime / 0.18f);
     float e = easeOut(openAnim_);
 
-    bool popupBefore = confirmOpen_ || gameOptsOpen_;   // B que cierra un diálogo no cierra también el menú
+    bool popupBefore = confirmOpen_ || gameOptsOpen_ || keepOpen_;   // B que cierra un diálogo no cierra también el menú
     video_.imguiNewFrame();
     ImGui::NewFrame();
     video_.addGameLayer();
@@ -912,6 +977,7 @@ void Menu::draw() {
     if (tab_ == 0) drawLibrary(); else if (tab_ == 1) drawGame(); else if (tab_ == 2) drawSettings(); else drawInfo();
     drawConfirm();
     drawGameOptions();
+    drawKeepChanges();
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::EndChild();
@@ -931,7 +997,7 @@ void Menu::draw() {
     ImGui::Render();
     video_.imguiRender(ImGui::GetDrawData());
     // B: con juego vuelve al juego; sin juego pregunta si salir de PSX-K2 (A confirma)
-    if ((input_.down() & HidNpadButton_B) && !popupBefore && !confirmOpen_ && !gameOptsOpen_) {
+    if ((input_.down() & HidNpadButton_B) && !popupBefore && !confirmOpen_ && !gameOptsOpen_ && !keepOpen_) {
         if (core_.loaded()) open = false;
         else { confirmOpen_ = true; confirmCat_ = "__salir__"; }
     }

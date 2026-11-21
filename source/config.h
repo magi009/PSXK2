@@ -52,6 +52,8 @@ public:
     bool isOn(const char* id) const { return std::string(value(id)) == "enabled"; }
     void setIndex(const char* id, int idx);        // escribe en editScope
     bool isOverridden(const char* id) const;
+    const OptionDef* find(const char* id) const;
+    void removeOverride(const char* id);           // vuelve a usar el valor global en este juego
 
     // Para el núcleo: devuelve el valor gestionado o nullptr
     const char* coreValue(const char* coreKey) const;
@@ -60,7 +62,6 @@ public:
 
 private:
     Config();
-    const OptionDef* find(const char* id) const;
     void parseIni(const std::string& path, std::map<std::string, int>& out);
     void writeIni(const std::string& path, const std::map<std::string, int>& m, bool full);
 

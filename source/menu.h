@@ -92,5 +92,13 @@ private:
 
     // Confirmación de "Restaurar"
     bool confirmOpen_ = false;
+    // "¿Conservar los cambios?" tras cambiar resolución o modo de pantalla: 10 s para confirmar, si no se revierte
+    void changeOption(const OptionDef& o, int idx);
+    void drawKeepChanges();
+    bool keepOpen_ = false;
+    std::string keepId_, keepFrom_, keepTo_;
+    int keepOldIdx_ = 0;
+    bool keepHadOverride_ = false, keepGameScope_ = false;
+    u64 keepDeadline_ = 0;
     std::string confirmCat_;      // vacío = todas
 };
