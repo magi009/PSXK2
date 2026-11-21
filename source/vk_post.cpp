@@ -112,7 +112,7 @@ bool VkPresenter::ensurePost() {
     for (auto& pool : postPool_) {
         VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 160};
         VkDescriptorPoolCreateInfo dp = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        dp.maxSets = 80;   // ScaleFX + TAA + copia + pantalla, hasta 3 veces por frame en avance rápido dp.poolSizeCount = 1; dp.pPoolSizes = &ps;
+        dp.maxSets = 80; dp.poolSizeCount = 1; dp.pPoolSizes = &ps;   // ScaleFX + TAA + copia + pantalla, x3 en avance rápido
         vkCreateDescriptorPool(dev_, &dp, nullptr, &pool);
     }
     // Render pass del historial TAA: se sobrescribe entero y queda listo para leerse
