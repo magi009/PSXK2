@@ -21,6 +21,7 @@ public:
 
     bool open = true;
     bool quit = false;
+    bool restartRequested = false;      // salir y volver a abrir PSX-K2 (cambio de renderizador)
     bool screenshotRequested = false;
     // Carga/cierre diferidos: se ejecutan al inicio del ciclo, nunca a mitad de un frame
     std::string pendingRom;

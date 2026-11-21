@@ -130,6 +130,8 @@ void Video::buildShaders() {
         progs_[i] = glCreateProgram();
         glAttachShader(progs_[i], vs); glAttachShader(progs_[i], fs);
         glLinkProgram(progs_[i]);
+        GLint ok = 0; glGetProgramiv(progs_[i], GL_LINK_STATUS, &ok);
+        if (!ok) { char log[1024]; glGetProgramInfoLog(progs_[i], sizeof log, nullptr, log); LOGI("[video] programa %d: %s", i, log); }
         glDeleteShader(fs);
     }
     glDeleteShader(vs);
@@ -312,6 +314,12 @@ void Video::draw(GLuint tex, unsigned w, unsigned h, unsigned texW, unsigned tex
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
     glUseProgram(0);
+    static unsigned diag = 0;
+    if (diag < 6) {
+        diag++;
+        LOGI("[video] GL frame %ux%u (textura %ux%u) programa %d viewport %d,%d %dx%d glGetError=0x%x",
+             w, h, texW, texH, p, vpX_, vpY_, vpW_, vpH_, glGetError());
+    }
     glViewport(0, 0, scrW_, scrH_);
 }
 
@@ -324,7 +332,7 @@ void Video::presentHw(unsigned w, unsigned h) {
         const char* us = cf.value("upscale_shader");
         vk_->setScaleFx(!strcmp(us, "scalefx"));
         vk_->setPixelScaler(!strcmp(us, "scale2x") ? 2 : !strcmp(us, "scale3x") ? 3 : !strcmp(us, "eagle2x") ? 4 : 0);
-        unsigned div = !strcmp(cf.value("renderer"), "hardware_vk") ? 1u << cf.index("internal_res") : 1u;
+        unsigned div = !strcmp(cf.activeRenderer(), "hardware_vk") ? 1u << cf.index("internal_res") : 1u;
         vk_->setScreenFx(cf.index("screen_fx"), div);
         computeViewport(w, h);
         vk_->presentCore(w, h, vpX_, vpY_, vpW_, vpH_, linearFilter());

@@ -606,12 +606,17 @@ void VkPresenter::presentSw(const void* data, unsigned w, unsigned h, size_t pit
     VKDIAG("[vk] presentSw %ux%u pitch=%zu %s", w, h, pitch, xrgb ? "XRGB8888" : "RGB565");
     VkFormat fmt = xrgb ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R5G6B5_UNORM_PACK16;
     unsigned bpp = xrgb ? 4 : 2;
-    if ((VkDeviceSize)pitch * h > kStageSize) return;
+    if ((VkDeviceSize)pitch * h > kStageSize || w > kSwW || h > kSwH) {
+        static unsigned n = 0;
+        if (n++ < 5) LOGI("[vk] frame por software %ux%u demasiado grande (máx %ux%u)", w, h, kSwW, kSwH);
+        clearTarget();
+        return;
+    }
     if (!swImg_ || swFmt_ != fmt) {
         vkDeviceWaitIdle(dev_);
         if (swImg_) { vkDestroyImage(dev_, swImg_, nullptr); vkFreeMemory(dev_, swMem_, nullptr); }
         VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt; ii.extent = {1024, 512, 1};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt; ii.extent = {kSwW, kSwH, 1};
         ii.mipLevels = 1; ii.arrayLayers = 1; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
         ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         vkCreateImage(dev_, &ii, nullptr, &swImg_);

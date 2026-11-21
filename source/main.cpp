@@ -13,7 +13,7 @@
 #include <cstring>
 #include <string>
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleep);
     paths::init();
     logx::init((paths::logs + "/psx-k2.log").c_str());
@@ -40,6 +40,8 @@ int main(int, char**) {
 
     Video video;
     if (!video.init()) { logx::shutdown(); return 1; }
+    cfg.setActiveRenderer(video.isVulkan() ? "hardware_vk" : "software");
+    LOGI("[video] renderizador activo: %s", cfg.activeRenderer());
     Audio audio; audio.init();
     Input input; input.init();
     CoreHost core(video, audio, input);
@@ -100,7 +102,7 @@ int main(int, char**) {
             if (slowSeconds >= 3 && strcmp(guard, "off") && t - lastGuardAction > 10) {
                 lastGuardAction = t; slowSeconds = 0;
                 int res = cfg.index("internal_res"), msaa = cfg.index("msaa");
-                bool vk = !strcmp(cfg.value("renderer"), "hardware_vk");
+                bool vk = !strcmp(cfg.activeRenderer(), "hardware_vk");
                 if (!strcmp(guard, "auto") && ((vk && msaa > 0) || res > 0)) {
                     Scope prev = cfg.editScope;
                     cfg.editScope = Scope::Game;
@@ -148,6 +150,13 @@ int main(int, char**) {
     }
 
     cfg.saveGlobal();
+    // "Reiniciar ahora" (cambio de renderizador): el hbloader vuelve a abrir este mismo .nro al salir
+    if (menu.restartRequested && envHasNextLoad()) {
+        std::string self = (argc > 0 && argv[0] && argv[0][0]) ? argv[0] : paths::root + "/psx-k2.nro";
+        std::string args = "\"" + self + "\"";
+        Result rc = envSetNextLoad(self.c_str(), args.c_str());
+        LOGI("[main] reinicio: %s (rc=0x%x)", self.c_str(), rc);
+    }
     covers::shutdown();
     core.deinit();
     menu.shutdown();

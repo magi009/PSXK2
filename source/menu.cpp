@@ -640,6 +640,23 @@ void Menu::drawSettings() {
         ImGui::PopStyleVar(2);
     }
 
+    // Cambio de renderizador pendiente: solo se aplica al volver a abrir PSX-K2
+    if (c.rendererPending()) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.08f, 1));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16 * scale_, 10 * scale_));
+        float bh = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2;
+        ImGui::BeginChild("pending", ImVec2(0, bh + 20 * scale_), ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(C_WARN, "El renderizador cambiará al reiniciar PSX-K2");
+        const char* lbl = "Reiniciar ahora";
+        ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(lbl).x - ImGui::GetStyle().FramePadding.x * 2 - 16 * scale_);
+        if (BigButton(lbl, C_ACCENT, 0, 0)) {
+            if (core_.loaded()) core_.flushMemcard(true);   // al salir también se cierra el juego
+            restartRequested = true; quit = true;
+        }
+        ImGui::EndChild(); ImGui::PopStyleVar(); ImGui::PopStyleColor();
+    }
+
     // Restaurar esta categoría
     std::string catReset = "Restaurar " + cats[cat_];
     if (ImGui::Button(catReset.c_str())) { confirmOpen_ = true; confirmCat_ = cats[cat_]; }
@@ -746,7 +763,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.8.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.8.1  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));

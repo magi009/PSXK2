@@ -229,9 +229,9 @@ static const struct { const char* id; unsigned flags; } kFlags[] = {
 };
 
 bool Config::appliesToRenderer(const OptionDef& d) const {
-    bool vk = !strcmp(value("renderer"), "hardware_vk");
+    bool vk = !strcmp(activeRenderer(), "hardware_vk");
     if ((d.flags & OPT_VULKAN_ONLY) && !vk) return false;
-    if ((d.flags & OPT_HW_ONLY) && !strcmp(value("renderer"), "software")) return false;
+    if ((d.flags & OPT_HW_ONLY) && !strcmp(activeRenderer(), "software")) return false;
     return true;
 }
 
@@ -303,6 +303,10 @@ void Config::setIndex(const char* id, int idx) {
 }
 
 const char* Config::coreValue(const char* coreKey) const {
+    if (!strcmp(coreKey, "beetle_psx_hw_renderer")) return activeRenderer();
+    // Con el renderizador por software la resolución interna (oculta en ese modo) va siempre a 1x:
+    // a 4x la CPU no llega y los frames serían enormes
+    if (!strcmp(coreKey, "beetle_psx_hw_internal_resolution") && !strcmp(activeRenderer(), "software")) return "1x(native)";
     if (!strcmp(coreKey, "beetle_psx_hw_widescreen_hack"))
         return !strcmp(value("screen_mode"), "exclusive") ? "enabled" : "disabled";
     for (auto& d : defs_)

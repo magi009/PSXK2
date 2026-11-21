@@ -210,7 +210,8 @@ private:
     VkImage swImg_ = VK_NULL_HANDLE; VkDeviceMemory swMem_ = VK_NULL_HANDLE;
     VkFormat swFmt_ = VK_FORMAT_UNDEFINED;
     VkImageLayout swLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
-    static constexpr VkDeviceSize kStageSize = 1024 * 512 * 4;
+    static constexpr VkDeviceSize kStageSize = 2048 * 1024 * 4;   // hasta 2048x1024 en 32 bits
+    static constexpr uint32_t kSwW = 2048, kSwH = 1024;
 
     retro_hw_render_interface_vulkan iface_ = {};
 };

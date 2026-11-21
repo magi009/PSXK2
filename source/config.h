@@ -35,6 +35,11 @@ public:
     void clearGame();
     // ¿La opción tiene efecto con el renderer actual? (las que no, se ocultan en el menú)
     bool appliesToRenderer(const OptionDef& d) const;
+    // Renderizador con el que arrancó PSX-K2 ("hardware_vk" o "software"). Cambiarlo requiere reiniciar la app:
+    // hasta entonces el núcleo sigue recibiendo el activo (si no, dibujaba en software sobre la salida Vulkan).
+    void setActiveRenderer(const char* r) { activeRenderer_ = r; }
+    const char* activeRenderer() const { return activeRenderer_.empty() ? value("renderer") : activeRenderer_.c_str(); }
+    bool rendererPending() const { return !activeRenderer_.empty() && activeRenderer_ != value("renderer"); }
     // Restaura a valores por defecto (en el ámbito que se está editando). nullptr = todas las categorías
     void resetCategory(const char* category);                              // borra overrides del juego actual
     void unloadGame();
@@ -62,6 +67,7 @@ private:
     std::vector<OptionDef> defs_;
     std::map<std::string, int> global_, game_;
     std::string gameStem_;
+    std::string activeRenderer_;
     bool coreDirty_ = true, feDirty_ = true;
     bool applyingPreset_ = false;
     void applyPreset(int idx);
