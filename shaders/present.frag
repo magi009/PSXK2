@@ -9,5 +9,5 @@ layout(set = 0, binding = 1) uniform sampler2D uUnused;
 
 void main() {
     vec3 c = pc.mode > 0.5 ? fxaa(uSrc, vUV, pc.rcp) : texture(uSrc, vUV).rgb;
-    outColor = vec4(c, 1.0);   // opaco aunque el núcleo deje alfa a 0
+    outColor = vec4(screenFx(c, vUV), 1.0);   // opaco aunque el núcleo deje alfa a 0
 }

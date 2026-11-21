@@ -47,7 +47,11 @@ public:
     void updateRefresh(int mode, unsigned gameFps, bool vsync);
     bool doublePresent() const { return doublePresent_; }
     // ScaleFX (Sp00kyFox): suavizado de bordes para pixel art, 5 pasadas, salida 3x. Pensado para resolución interna 1x.
-    void setScaleFx(bool on) { sfxOn_ = on; }   // 2 presentaciones por frame emulado
+    void setScaleFx(bool on) { sfxOn_ = on; }
+    // Escalador de píxel: 0 ninguno, 2 Scale2x, 3 Scale3x, 4 Eagle 2x
+    void setPixelScaler(int mode) { pixMode_ = mode; }
+    // Efecto de pantalla (0..4) y divisor de la resolución interna (para seguir las líneas originales)
+    void setScreenFx(int effect, unsigned divisor) { fxEffect_ = effect; fxDiv_ = divisor ? divisor : 1; }   // 2 presentaciones por frame emulado
     int refreshMode() const { return refreshMode_; }
     unsigned presentHz() const { return doublePresent_ ? appliedFps_ * 2 : refreshMode_ == 1 ? appliedFps_ : 60; }
     void setInterp(bool live);                              // juego corriendo a velocidad normal, sin menú
@@ -165,7 +169,15 @@ private:
     bool createTarget(Hist& t, uint32_t w, uint32_t h);
     bool createTargetFmt(Hist& t, uint32_t w, uint32_t h, VkFormat fmt, VkRenderPass rp);
     void recordPass(VkPipeline pipe, VkRenderPass rp, Hist& dst, uint32_t w, uint32_t h, VkImageView a, VkImageLayout la,
-                    VkImageView b, VkImageLayout lb, float rx, float ry);
+                    VkImageView b, VkImageLayout lb, float rx, float ry, float mode = 0.f);
+    bool ensurePix(uint32_t w, uint32_t h, uint32_t f);
+    Hist pix_ = {};
+    uint32_t pixW_ = 0, pixH_ = 0;
+    VkPipeline pipePix_ = VK_NULL_HANDLE;
+    VkShaderModule fsPix_ = VK_NULL_HANDLE;
+    int pixMode_ = 0, fxEffect_ = 0;
+    unsigned fxDiv_ = 1;
+    bool pixFailed_ = false;
     bool ensureSfx(uint32_t w, uint32_t h);
     void recordSfx(VkImageView src, VkImageLayout lay, uint32_t w, uint32_t h);
     Hist sfx_[5] = {};                  // métricas (16F) x2, datos x2, salida 3x
@@ -186,7 +198,8 @@ private:
     VkPipeline pipeBlend_ = VK_NULL_HANDLE, pipeCopy_ = VK_NULL_HANDLE;
     VkShaderModule fsBlend_ = VK_NULL_HANDLE;
     struct PendingPost { VkImageView view; VkImageLayout layout; bool linear; bool fxaa; float rcp[2]; int vx, vy, vw, vh;
-                         VkImageView blendWith = VK_NULL_HANDLE; };   // != null: mezcla 50 % (frame intermedio)
+                         VkImageView blendWith = VK_NULL_HANDLE;   // != null: mezcla 50 % (frame intermedio)
+                         float effect = 0.f; float fxSize[2] = {0.f, 0.f}; };
     PendingPost post_ = {}, fgPost_ = {};
     bool pendingPost_ = false;
 

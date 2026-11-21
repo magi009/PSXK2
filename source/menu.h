@@ -43,6 +43,13 @@ private:
     void drawToast(float bottomY);
     void drawConfirm();
     void drawGameOptions();
+    void drawBackground();              // fondo detrás de la interfaz (sin juego cargado)
+    bool loadBackgroundImage();
+    uint64_t bgTex_ = 0;
+    int bgW_ = 0, bgH_ = 0;
+    unsigned bgGen_ = 0;
+    bool bgTried_ = false;
+    float bgTime_ = 0.f;
     void touchScroll();            // arrastre con el dedo + inercia en la ventana actual
     void refreshStatus(bool force);
 

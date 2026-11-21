@@ -417,11 +417,20 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
         VkImageView src = coreImg_.image_view;
         VkImageLayout lay = coreImg_.image_layout;
         bool fx = aaFxaa_;
-        // ScaleFX: solo con imagen nativa o casi (1x-2x); a 4x u 8x el coste se dispara y no aporta
-        if (sfxOn_ && w <= 1024 && h <= 576 && ensureSfx(w, h)) {
+        float fxW = (float)w / fxDiv_, fxH = (float)h / fxDiv_;   // píxeles originales de la PS1 (efectos)
+        // ScaleFX y escaladores de píxel: solo con imagen nativa o casi (1x-2x); a 4x u 8x no aportan
+        bool small = w <= 1024 && h <= 576;
+        if (sfxOn_ && small && ensureSfx(w, h)) {
             recordSfx(src, lay, w, h);
             src = sfx_[4].view; lay = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             w *= 3; h *= 3;
+        } else if (pixMode_ && small) {
+            uint32_t f = pixMode_ == 3 ? 3 : 2;
+            if (ensurePix(w, h, f)) {
+                recordPass(pipePix_, histPass_, pix_, w * f, h * f, src, lay, src, lay, 1.f / w, 1.f / h, (float)pixMode_);
+                src = pix_.view; lay = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                w *= f; h *= f;
+            }
         }
         if (aaTaa_ && ensureHistory(w, h)) {
             recordTaa(src, lay, w, h, fx);
@@ -430,6 +439,7 @@ void VkPresenter::presentCore(unsigned w, unsigned h, int vx, int vy, int vw, in
             fx = false;
         }
         post_ = {src, lay, linear, fx, {1.f / w, 1.f / h}, vx, vy, vw, vh};
+        post_.effect = (float)fxEffect_; post_.fxSize[0] = fxW; post_.fxSize[1] = fxH;
         pendingPost_ = true;
         // Frames intermedios (120 Hz): se guarda una copia propia del frame y esta presentación muestra
         // la mezcla con el anterior; el frame real va en la presentación extra (Video::extraPresent).

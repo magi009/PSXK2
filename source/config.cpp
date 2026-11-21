@@ -49,13 +49,22 @@ Config::Config() {
         "Original: 4:3 como la PlayStation, con bandas a los lados. Completa: estira la imagen a toda la "
         "pantalla. Exclusiva: los juegos 3D se renderizan de verdad en panorámico (sin deformar) y se ocultan "
         "FPS y avisos; en 2D puede mostrar bordes extra.", false},
-    {"upscale_shader", "Escalador / filtro de salida", C_VIDEO, nullptr,
-        {{"Nearest (píxel nítido)", "nearest"}, {"Bilineal", "bilinear"}, {"Sharp Bilinear", "sharp"},
-         {"Bicúbico Catmull-Rom", "bicubic"}, {"CRT scanlines", "crt"}, {"ScaleFX (pixel art 2D)", "scalefx"}}, 2,
-        "Filtro que lleva la imagen renderizada al tamaño de pantalla. ScaleFX redondea los bordes de los "
-        "píxeles sin desenfocar ni inventar colores: ideal para juegos 2D (Castlevania SOTN, Mega Man X4...) con "
-        "resolución interna 1x; a 4x u 8x no se aplica. Con Vulkan, Sharp/Bicúbico/CRT usan bilineal por ahora; "
-        "en OpenGL ScaleFX usa Sharp Bilinear.", false},
+    {"upscale_shader", "Filtro de escalado", C_VIDEO, nullptr,
+        {{"Ninguno (píxel nítido)", "nearest"}, {"Bilineal", "bilinear"}, {"Sharp Bilinear", "sharp"},
+         {"Bicúbico Catmull-Rom", "bicubic"}, {"ScaleFX (pixel art 2D)", "scalefx"}, {"Scale2x", "scale2x"},
+         {"Scale3x", "scale3x"}, {"Eagle 2x", "eagle2x"}}, 2,
+        "Cómo se agranda la imagen hasta la pantalla. ScaleFX, Scale2x, Scale3x y Eagle 2x redondean los "
+        "bordes de los píxeles usando solo los colores originales: son para juegos 2D (Castlevania SOTN, "
+        "Mega Man X4...) con resolución interna 1x; a 4x u 8x no se aplican. ScaleFX es el más suave, "
+        "Scale2x/3x el más fiel al píxel y Eagle 2x el más redondeado. Con Vulkan, Sharp y Bicúbico usan "
+        "bilineal por ahora; en OpenGL los escaladores de píxel usan Ninguno.", false},
+    {"screen_fx", "Efecto de pantalla", C_VIDEO, nullptr,
+        {{"Ninguno", "none"}, {"Scanlines", "scanlines"}, {"CRT (rejilla de apertura)", "crt"}, {"LCD", "lcd"},
+         {"Subpíxel LCD", "subpixel"}}, 0,
+        "Imita la pantalla donde se jugaba. Scanlines: las líneas oscuras de una tele. CRT: además, las "
+        "franjas de color rojo, verde y azul de un tubo Trinitron. LCD: la rejilla fina de una pantalla "
+        "portátil. Subpíxel LCD: cada píxel dividido en sus tres colores. Siguen las líneas reales de la "
+        "PlayStation aunque subas la resolución interna; se ven mejor en el dock o a 1080p.", false},
 
     {"depth", "Profundidad de color", C_VIDEO, "beetle_psx_hw_depth",
         {{"16 bpp (nativa)", "16bpp(native)"}, {"32 bpp (sin bandas)", "32bpp"}}, 1, "", false},
@@ -190,6 +199,11 @@ Config::Config() {
         {{"Por posición (B=X, A=O, Y=□, X=△)", "position"}, {"Nintendo (A=X, B=O)", "nintendo"}}, 0, "", false},
 
     // ---------------------------------------------------------------- BIBLIOTECA
+    {"ui_background", "Fondo de la interfaz", "Biblioteca", nullptr,
+        {{"Degradado animado", "animated"}, {"Imagen propia (fondo.png / fondo.jpg)", "image"}, {"Liso", "plain"}}, 0,
+        "Lo que se ve detrás del menú cuando no hay juego cargado (con un juego, se ve el juego en pausa). "
+        "Imagen propia: copia desde el PC una imagen llamada fondo.png o fondo.jpg en sdmc:/switch/psx-k2/ "
+        "(mejor 1920x1080). Se oscurece un poco para que el texto se lea bien.", false},
     {"library_view", "Vista de la biblioteca", "Biblioteca", nullptr,
         {{"Cuadrícula con portadas", "grid"}, {"Lista", "list"}}, 0, "", false},
     {"covers_auto", "Descargar portadas automáticamente", "Biblioteca", nullptr, ONOFF, 0,
@@ -211,7 +225,7 @@ static const struct { const char* id; unsigned flags; } kFlags[] = {
     {"internal_res", OPT_HW_ONLY}, {"msaa", OPT_VULKAN_ONLY}, {"depth", OPT_HW_ONLY}, {"dither", OPT_HW_ONLY},
     {"widescreen_ar", 0}, {"tex_filter", OPT_HW_ONLY}, {"filter_ex_sprite", OPT_HW_ONLY},
     {"filter_ex_2d", OPT_HW_ONLY}, {"adaptive_smooth", OPT_VULKAN_ONLY}, {"supersampling", OPT_HW_ONLY},
-    {"mdec_yuv", OPT_VULKAN_ONLY}, {"display_120", OPT_VULKAN_ONLY}, {"scaled_uv", OPT_HW_ONLY}, {"pgxp_texture", OPT_HW_ONLY},
+    {"mdec_yuv", OPT_VULKAN_ONLY}, {"display_120", OPT_VULKAN_ONLY}, {"screen_fx", 0}, {"scaled_uv", OPT_HW_ONLY}, {"pgxp_texture", OPT_HW_ONLY},
 };
 
 bool Config::appliesToRenderer(const OptionDef& d) const {

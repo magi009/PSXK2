@@ -10,13 +10,14 @@
 #include "spv_taa_frag.h"
 #include "spv_blend_frag.h"
 #include "spv_scalefx0_frag.h"
+#include "spv_pixelscale_frag.h"
 #include "spv_scalefx1_frag.h"
 #include "spv_scalefx2_frag.h"
 #include "spv_scalefx3_frag.h"
 #include "spv_scalefx4_frag.h"
 #include <switch.h>
 
-struct PostPC { float rcp[2]; float mode; float blend; };
+struct PostPC { float rcp[2]; float mode; float blend; float effect; float pad0; float fxSize[2]; };   // = PC de aa_common.glsl
 
 static VkShaderModule makeModule(VkDevice dev, const uint32_t* code, size_t bytes) {
     VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -233,7 +234,8 @@ void VkPresenter::drawPendingGame() {
     vkCmdSetViewport(cb, 0, 1, &vp); vkCmdSetScissor(cb, 0, 1, &sc);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, blend ? pipeBlend_ : pipePresent_);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &set, 0, nullptr);
-    PostPC pc = {{post_.rcp[0], post_.rcp[1]}, post_.fxaa ? 1.f : 0.f, blend ? 0.5f : 1.f};
+    PostPC pc = {{post_.rcp[0], post_.rcp[1]}, post_.fxaa ? 1.f : 0.f, blend ? 0.5f : 1.f,
+                 post_.effect, 0.f, {post_.fxSize[0], post_.fxSize[1]}};
     vkCmdPushConstants(cb, postLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
     vkCmdDraw(cb, 3, 1, 0, 0);
 }
@@ -270,6 +272,11 @@ void VkPresenter::destroyPost() {
     for (auto& m : fsSfx_) { if (m) vkDestroyShaderModule(dev_, m, nullptr); m = VK_NULL_HANDLE; }
     if (sfxPass16_) vkDestroyRenderPass(dev_, sfxPass16_, nullptr);
     sfxPass16_ = VK_NULL_HANDLE; sfxFailed_ = false;
+    if (pix_.img) { pix_.freeAt = 0; histGrave_.push_back(pix_); pix_ = {}; }
+    pixW_ = pixH_ = 0; pixFailed_ = false;
+    if (pipePix_) vkDestroyPipeline(dev_, pipePix_, nullptr);
+    if (fsPix_) vkDestroyShaderModule(dev_, fsPix_, nullptr);
+    pipePix_ = VK_NULL_HANDLE; fsPix_ = VK_NULL_HANDLE;
     for (auto& h : histGrave_) {
         vkDestroyFramebuffer(dev_, h.fb, nullptr); vkDestroyImageView(dev_, h.view, nullptr);
         vkDestroyImage(dev_, h.img, nullptr); vkFreeMemory(dev_, h.mem, nullptr);
@@ -366,7 +373,7 @@ bool VkPresenter::presentInterpLatest() {
 // ------------------------------------------------------------------ ScaleFX
 // Pasada genérica a una imagen propia (fullscreen triangle). rx, ry = 1 / tamaño de la imagen de origen.
 void VkPresenter::recordPass(VkPipeline pipe, VkRenderPass rp, Hist& dst, uint32_t w, uint32_t h, VkImageView a,
-                             VkImageLayout la, VkImageView b, VkImageLayout lb, float rx, float ry) {
+                             VkImageLayout la, VkImageView b, VkImageLayout lb, float rx, float ry, float mode) {
     VkDescriptorSet set = allocPostSet(a, la, b, lb, sampNearest_);
     if (!set) return;
     VkCommandBuffer cb = cmd_[frame_];
@@ -378,10 +385,27 @@ void VkPresenter::recordPass(VkPipeline pipe, VkRenderPass rp, Hist& dst, uint32
     vkCmdSetViewport(cb, 0, 1, &vp); vkCmdSetScissor(cb, 0, 1, &sc);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &set, 0, nullptr);
-    PostPC pc = {{rx, ry}, 0.f, 1.f};
+    PostPC pc = {{rx, ry}, mode, 1.f};
     vkCmdPushConstants(cb, postLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
     vkCmdDraw(cb, 3, 1, 0, 0);
     vkCmdEndRenderPass(cb);
+}
+
+// Scale2x / Scale3x / Eagle 2x: una pasada a 2x o 3x (pixelscale.frag)
+bool VkPresenter::ensurePix(uint32_t w, uint32_t h, uint32_t f) {
+    if (pixFailed_ || !postReady_) return false;
+    if (!pipePix_) {
+        fsPix_ = makeModule(dev_, spv_pixelscale_frag, sizeof(spv_pixelscale_frag));
+        pipePix_ = fsPix_ ? makePipeline(dev_, histPass_, postLayout_, vsMod_, fsPix_) : VK_NULL_HANDLE;
+        if (!pipePix_) { pixFailed_ = true; LOGI("[vk] no se pudo crear el escalador de píxel"); return false; }
+    }
+    if (pix_.img && pixW_ == w * f && pixH_ == h * f) return true;
+    if (pix_.img) { pix_.freeAt = frameCount_ + kFrames + 2; histGrave_.push_back(pix_); pix_ = {}; }
+    pixW_ = pixH_ = 0;
+    if (!createTarget(pix_, w * f, h * f)) return false;
+    pixW_ = w * f; pixH_ = h * f;
+    LOGI("[vk] escalador de píxel %ux%u -> %ux%u", w, h, pixW_, pixH_);
+    return true;
 }
 
 bool VkPresenter::ensureSfx(uint32_t w, uint32_t h) {

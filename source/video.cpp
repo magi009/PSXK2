@@ -270,13 +270,18 @@ void Video::computeViewport(unsigned w, unsigned h) {
 
 }
 
-bool Video::linearFilter() const { return strcmp(Config::get().value("upscale_shader"), "nearest") != 0; }
+bool Video::linearFilter() const {
+    const char* us = Config::get().value("upscale_shader");
+    return strcmp(us, "nearest") != 0;   // tras ScaleFX/Scale2x la imagen ya es 2-3x: un bilineal suave evita saltos
+}
 
 void Video::draw(GLuint tex, unsigned w, unsigned h, unsigned texW, unsigned texH, bool flip) {
     Config& c = Config::get();
     const char* sh = c.value("upscale_shader");
-    int p = !strcmp(sh, "nearest") ? 0 : !strcmp(sh, "bilinear") ? 1 : !strcmp(sh, "sharp") || !strcmp(sh, "scalefx") ? 2
-          : !strcmp(sh, "bicubic") ? 3 : 4;   // ScaleFX solo existe en Vulkan: en OpenGL, Sharp Bilinear
+    // En OpenGL: ScaleFX -> Sharp Bilinear; Scale2x/3x/Eagle -> Ninguno; Scanlines/CRT -> shader CRT
+    int p = !strcmp(sh, "bilinear") ? 1 : !strcmp(sh, "sharp") || !strcmp(sh, "scalefx") ? 2 : !strcmp(sh, "bicubic") ? 3 : 0;
+    const char* fxv = c.value("screen_fx");
+    if (!strcmp(fxv, "scanlines") || !strcmp(fxv, "crt")) p = 4;
     if (strcmp(c.value("aa_post"), "off")) p = 5;   // en OpenGL: FXAA (el TAA solo existe en Vulkan)
 
     computeViewport(w, h);
@@ -315,7 +320,12 @@ void Video::presentHw(unsigned w, unsigned h) {
     if (vk_) {
         const char* aa = Config::get().value("aa_post");
         vk_->setAntialiasing(!strcmp(aa, "fxaa") || !strcmp(aa, "fxaa_taa"), !strcmp(aa, "taa") || !strcmp(aa, "fxaa_taa"));
-        vk_->setScaleFx(!strcmp(Config::get().value("upscale_shader"), "scalefx"));
+        Config& cf = Config::get();
+        const char* us = cf.value("upscale_shader");
+        vk_->setScaleFx(!strcmp(us, "scalefx"));
+        vk_->setPixelScaler(!strcmp(us, "scale2x") ? 2 : !strcmp(us, "scale3x") ? 3 : !strcmp(us, "eagle2x") ? 4 : 0);
+        unsigned div = !strcmp(cf.value("renderer"), "hardware_vk") ? 1u << cf.index("internal_res") : 1u;
+        vk_->setScreenFx(cf.index("screen_fx"), div);
         computeViewport(w, h);
         vk_->presentCore(w, h, vpX_, vpY_, vpW_, vpH_, linearFilter());
         return;

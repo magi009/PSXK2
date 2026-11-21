@@ -8,6 +8,7 @@
 #include "paths.h"
 #include "video.h"
 #include "imgui.h"
+#include "stb_image.h"
 #include <switch.h>
 #include <algorithm>
 #include <cmath>
@@ -337,7 +338,7 @@ void Menu::drawSidebar(float w) {
 }
 
 void Menu::drawFooter() {
-    std::string hints = G_A " Aceptar    " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
+    std::string hints = G_A " Aceptar    " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Salir");
     if (tab_ == 0) hints += "    " G_X " Opciones";
     if (tab_ == 2) hints += "    " G_ZL " " G_ZR " Categoría";
     hints += "    " G_L " " G_R " Secciones    Stick izq. Mover    Stick dcho. Desplazar";
@@ -725,10 +726,12 @@ void Menu::drawConfirm() {
         ImGui::Dummy(ImVec2(0, 8 * scale_));
         float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         bool cancel = (input_.down() & HidNpadButton_B) != 0;
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        bool appearing = ImGui::IsWindowAppearing();
+        if (appearing && !exitApp) ImGui::SetKeyboardFocusHere();
         if (BigButton("Cancelar", C_PANEL2, w, 0)) cancel = true;
         ImGui::SameLine();
         if (exitApp) {
+            if (appearing) ImGui::SetKeyboardFocusHere();      // A sale directamente; B cancela
             if (BigButton("Salir", C_DANGER, w, 0)) { quit = true; cancel = true; }
         } else if (BigButton("Restaurar", C_DANGER, w, 0)) {
             c.resetCategory(confirmCat_.empty() ? nullptr : confirmCat_.c_str());
@@ -743,7 +746,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.7.1  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.8.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));
@@ -768,6 +771,71 @@ void Menu::drawInfo() {
 }
 
 // ------------------------------------------------------------------ frame
+// ------------------------------------------------------------------ fondo
+bool Menu::loadBackgroundImage() {
+    if (bgTex_ && bgGen_ == video_.textureGeneration()) return true;
+    if (bgTex_ && bgGen_ != video_.textureGeneration()) bgTex_ = 0;   // el dispositivo cambió: la textura ya no existe
+    if (bgTried_) return false;
+    bgTried_ = true;
+    for (const char* name : {"/fondo.png", "/fondo.jpg", "/fondo.jpeg"}) {
+        std::vector<unsigned char> file;
+        if (!paths::readFile(paths::root + name, file)) continue;
+        int w, h, n;
+        unsigned char* px = stbi_load_from_memory(file.data(), (int)file.size(), &w, &h, &n, 4);
+        if (!px) { LOGI("[ui] %s no es una imagen válida", name + 1); continue; }
+        bgTex_ = video_.createTexture(px, w, h);
+        stbi_image_free(px);
+        if (!bgTex_) continue;
+        bgW_ = w; bgH_ = h; bgGen_ = video_.textureGeneration();
+        LOGI("[ui] fondo propio %s (%dx%d)", name + 1, w, h);
+        return true;
+    }
+    toast("No hay fondo.png ni fondo.jpg en " + paths::root);
+    return false;
+}
+
+void Menu::drawBackground() {
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 S = io.DisplaySize;
+    const char* mode = Config::get().value("ui_background");
+    if (strcmp(mode, "image")) bgTried_ = false;     // al volver a elegir "Imagen propia" se busca otra vez
+    if (!strcmp(mode, "image") && loadBackgroundImage()) {
+        // Cubre toda la pantalla sin deformar (recorta lo que sobra) y se oscurece para leer el texto
+        float sa = S.x / S.y, ia = (float)bgW_ / bgH_;
+        ImVec2 uv0(0, 0), uv1(1, 1);
+        if (ia > sa) { float k = sa / ia; uv0.x = (1 - k) * 0.5f; uv1.x = 1 - uv0.x; }
+        else { float k = ia / sa; uv0.y = (1 - k) * 0.5f; uv1.y = 1 - uv0.y; }
+        dl->AddImage((ImTextureID)(uintptr_t)bgTex_, ImVec2(0, 0), S, uv0, uv1);
+        dl->AddRectFilled(ImVec2(0, 0), S, col(ImVec4(0.02f, 0.03f, 0.07f, 0.55f)));
+        return;
+    }
+    // Degradado base, medianoche
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), S, col(ImVec4(0.050f, 0.078f, 0.180f, 1)), col(ImVec4(0.067f, 0.090f, 0.220f, 1)),
+                                col(ImVec4(0.027f, 0.039f, 0.090f, 1)), col(ImVec4(0.035f, 0.051f, 0.122f, 1)));
+    if (!strcmp(mode, "plain")) return;
+    bgTime_ += io.DeltaTime;
+    float t = bgTime_;
+    // Luces suaves que flotan muy despacio (círculos concéntricos casi transparentes = brillo difuso)
+    struct Blob { ImVec4 c; float x, y, r, sx, sy; } blobs[3] = {
+        {ImVec4(0.30f, 0.51f, 1.00f, 1), 0.22f, 0.30f, 0.42f, 0.050f, 0.037f},
+        {ImVec4(0.47f, 0.36f, 0.95f, 1), 0.80f, 0.72f, 0.46f, 0.031f, 0.043f},
+        {ImVec4(0.16f, 0.70f, 0.90f, 1), 0.62f, 0.18f, 0.30f, 0.041f, 0.027f}};
+    for (auto& b : blobs) {
+        ImVec2 c(S.x * (b.x + 0.10f * sinf(t * b.sx * 6.283f)), S.y * (b.y + 0.12f * cosf(t * b.sy * 6.283f)));
+        float R = S.y * b.r;
+        for (int i = 0; i < 18; i++) {
+            float r = R * (1.f - i / 18.f);
+            dl->AddCircleFilled(c, r, col(b.c, 0.011f), 64);
+        }
+    }
+    // Rejilla de puntos muy tenue
+    float sp = 46 * scale_;
+    float off = fmodf(t * 6 * scale_, sp);
+    for (float y = -sp + off; y < S.y + sp; y += sp)
+        for (float x = 0; x < S.x; x += sp) dl->AddCircleFilled(ImVec2(x, y), 1.3f * scale_, col(ImVec4(1, 1, 1, 0.045f)), 6);
+}
+
 void Menu::draw() {
     feedInput();
     refreshStatus(false);
@@ -778,12 +846,16 @@ void Menu::draw() {
     tabAnim_ = std::min(1.f, tabAnim_ + io.DeltaTime / 0.18f);
     float e = easeOut(openAnim_);
 
+    bool popupBefore = confirmOpen_ || gameOptsOpen_;   // B que cierra un diálogo no cierra también el menú
     video_.imguiNewFrame();
     ImGui::NewFrame();
     video_.addGameLayer();
-    // Oscurece el juego detrás del menú
+    // Detrás de la interfaz: el juego en pausa oscurecido, o el fondo elegido si no hay juego
     if (core_.loaded())
-        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, col(ImVec4(0, 0, 0, 0.55f), e));
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, col(ImVec4(0, 0, 0, 0.50f), e));
+    else
+        drawBackground();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(C_BG.x, C_BG.y, C_BG.z, core_.loaded() ? 0.72f : 0.30f));
 
     // A pantalla completa: aprovecha todo el panel (antes había un marco del 3,5 %)
     ImVec2 pos(0, (1.f - e) * 24 * scale_);
@@ -837,10 +909,15 @@ void Menu::draw() {
     drawToast(io.DisplaySize.y - footerH - 40 * scale_);
     ImGui::PopFont();
     ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 
     ImGui::Render();
     video_.imguiRender(ImGui::GetDrawData());
-    if ((input_.down() & HidNpadButton_B) && core_.loaded() && !confirmOpen_ && !gameOptsOpen_) open = false;
+    // B: con juego vuelve al juego; sin juego pregunta si salir de PSX-K2 (A confirma)
+    if ((input_.down() & HidNpadButton_B) && !popupBefore && !confirmOpen_ && !gameOptsOpen_) {
+        if (core_.loaded()) open = false;
+        else { confirmOpen_ = true; confirmCat_ = "__salir__"; }
+    }
     if (!open) wasOpen_ = false;
     if (nextClaim_ && !scrollClaim_) scrollClaim_ = nextClaim_;   // la ventana que se arrastra queda fijada
 }

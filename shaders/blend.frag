@@ -11,5 +11,5 @@ layout(set = 0, binding = 1) uniform sampler2D uNext;
 void main() {
     vec3 a = pc.mode > 0.5 ? fxaa(uPrev, vUV, pc.rcp) : texture(uPrev, vUV).rgb;
     vec3 b = pc.mode > 0.5 ? fxaa(uNext, vUV, pc.rcp) : texture(uNext, vUV).rgb;
-    outColor = vec4(mix(a, b, pc.blend), 1.0);
+    outColor = vec4(screenFx(mix(a, b, pc.blend), vUV), 1.0);
 }
