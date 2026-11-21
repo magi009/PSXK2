@@ -9,7 +9,7 @@ layout(set = 0, binding = 0) uniform sampler2D uSrc;
 layout(set = 0, binding = 1) uniform sampler2D uUnused;
 #include "aa_common.glsl"
 
-vec3 T(int x, int y) { return textureOffset(uSrc, vUV, ivec2(x, y)).rgb; }
+#define T(x, y) textureOffset(uSrc, vUV, ivec2(x, y)).rgb
 bool eq(vec3 a, vec3 b) { return all(lessThan(abs(a - b), vec3(2.0 / 255.0))); }
 
 void main() {
