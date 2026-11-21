@@ -17,6 +17,8 @@ void Input::init() {
 void Input::update() {
     padUpdate(&pads_[0]);
     padUpdate(&pads_[1]);
+    updateStickDirs(0);
+    updateStickDirs(1);
     // Registro: estilo de cada mando cuando cambia (para diagnosticar mandos no detectados)
     for (int i = 0; i < 2; i++) {
         u32 st = padGetStyleSet(&pads_[i]);
@@ -57,6 +59,26 @@ void Input::update() {
     }
 }
 
+// Stick izquierdo -> direcciones. Se pulsa al pasar del 50 % de inclinación y se suelta por debajo del 35 %
+// (histéresis: sin parpadeo en el borde). Las diagonales activan dos direcciones, como una cruceta.
+void Input::updateStickDirs(int port) {
+    HidAnalogStickState s = padGetStickPos(&pads_[port], 0);
+    const int on = 16384, off = 11468;
+    u64 prev = stickHeld_[port], cur = 0;
+    auto axis = [&](int v, u64 neg, u64 pos) {
+        if (v <= -on || (v <= -off && (prev & neg))) cur |= neg;
+        if (v >= on || (v >= off && (prev & pos))) cur |= pos;
+    };
+    axis(s.x, HidNpadButton_StickLLeft, HidNpadButton_StickLRight);
+    axis(s.y, HidNpadButton_StickLDown, HidNpadButton_StickLUp);      // HID: +Y hacia arriba
+    stickHeld_[port] = cur;
+    stickDown_[port] = cur & ~prev;
+    if (cur != prev && stickLogs_ < 40) {
+        stickLogs_++;
+        LOGI("[input] jugador %d stick izq. %d,%d -> direcciones 0x%llx", port + 1, s.x, s.y, (unsigned long long)(cur >> 16));
+    }
+}
+
 // Lee directamente cada canal de HID (una vez por segundo, los primeros 15 s) para ver por dónde
 // llegan de verdad las pulsaciones en Switch 2
 void Input::probeRaw() {
@@ -85,6 +107,11 @@ int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id
     unsigned base = device & RETRO_DEVICE_MASK;
 
     if (base == RETRO_DEVICE_JOYPAD) {
+        // Stick izquierdo como cruceta: imprescindible con el mando Digital (no tiene sticks) y opcional con DualShock
+        const char* sd = Config::get().value("stick_dpad");
+        const char* pt = Config::get().value(port == 0 ? "pad1_type" : "pad2_type");
+        bool stickAsDpad = !strcmp(sd, "on") || (!strcmp(sd, "auto") && strcmp(pt, "dualshock"));
+        if (stickAsDpad) b |= stickHeld_[port];
         // Mientras se usa − como atajo no se envía SELECT ni los botones del atajo
         if (port == 0 && minusCombo_) b &= ~(HidNpadButton_Minus | HidNpadButton_Plus | HidNpadButton_ZR |
                                              HidNpadButton_R | HidNpadButton_L | HidNpadButton_X | HidNpadButton_Y);
@@ -99,10 +126,10 @@ int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id
             case RETRO_DEVICE_ID_JOYPAD_A:      m = circle; break;    // O
             case RETRO_DEVICE_ID_JOYPAD_Y:      m = square; break;    // □
             case RETRO_DEVICE_ID_JOYPAD_X:      m = triangle; break;  // △
-            case RETRO_DEVICE_ID_JOYPAD_UP:     m = HidNpadButton_Up; break;
-            case RETRO_DEVICE_ID_JOYPAD_DOWN:   m = HidNpadButton_Down; break;
-            case RETRO_DEVICE_ID_JOYPAD_LEFT:   m = HidNpadButton_Left; break;
-            case RETRO_DEVICE_ID_JOYPAD_RIGHT:  m = HidNpadButton_Right; break;
+            case RETRO_DEVICE_ID_JOYPAD_UP:     m = HidNpadButton_Up | (stickAsDpad ? HidNpadButton_StickLUp : 0); break;
+            case RETRO_DEVICE_ID_JOYPAD_DOWN:   m = HidNpadButton_Down | (stickAsDpad ? HidNpadButton_StickLDown : 0); break;
+            case RETRO_DEVICE_ID_JOYPAD_LEFT:   m = HidNpadButton_Left | (stickAsDpad ? HidNpadButton_StickLLeft : 0); break;
+            case RETRO_DEVICE_ID_JOYPAD_RIGHT:  m = HidNpadButton_Right | (stickAsDpad ? HidNpadButton_StickLRight : 0); break;
             case RETRO_DEVICE_ID_JOYPAD_START:  m = HidNpadButton_Plus; break;
             case RETRO_DEVICE_ID_JOYPAD_SELECT: m = HidNpadButton_Minus; break;
             case RETRO_DEVICE_ID_JOYPAD_L:      m = HidNpadButton_L; break;

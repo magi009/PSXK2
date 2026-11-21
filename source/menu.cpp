@@ -340,7 +340,7 @@ void Menu::drawFooter() {
     std::string hints = G_A " Aceptar    " G_B " " + std::string(core_.loaded() ? "Volver al juego" : "Volver");
     if (tab_ == 0) hints += "    " G_X " Opciones";
     if (tab_ == 2) hints += "    " G_ZL " " G_ZR " Categoría";
-    hints += "    " G_L " " G_R " Secciones";
+    hints += "    " G_L " " G_R " Secciones    Stick izq. Mover    Stick dcho. Desplazar";
     if (core_.loaded()) hints += "    " G_MINUS " + " G_PLUS " Menú";
     ImGui::PushFont(fontSmall_);
     ImGui::TextColored(C_MUTED, "%s", hints.c_str());
@@ -681,8 +681,8 @@ void Menu::drawSettings() {
         dl->AddText(ImVec2(v0.x + 14 * scale_, v0.y + 6 * scale_), col(C_TEXT), val.c_str());
         if ((ImGui::IsItemFocused() || ImGui::IsItemHovered()) && *o.help) help_ = o.help;
         if (ImGui::IsItemFocused() && io.NavVisible && !confirmOpen_) {
-            if (d & HidNpadButton_Right) c.setIndex(o.id, (idx + 1) % n);
-            if (d & HidNpadButton_Left) c.setIndex(o.id, (idx + n - 1) % n);
+            if (d & (HidNpadButton_Right | HidNpadButton_StickLRight)) c.setIndex(o.id, (idx + 1) % n);
+            if (d & (HidNpadButton_Left | HidNpadButton_StickLLeft)) c.setIndex(o.id, (idx + n - 1) % n);
         }
         if (act) {
             // Táctil: tocar la mitad izquierda de la píldora resta, la derecha suma
@@ -743,7 +743,7 @@ void Menu::drawConfirm() {
 
 void Menu::drawInfo() {
     ImGui::PushFont(fontTitle_); ImGui::Text("Información"); ImGui::PopFont();
-    ImGui::TextColored(C_MUTED, "PSX-K2 0.7.0  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
+    ImGui::TextColored(C_MUTED, "PSX-K2 0.7.1  ·  Beetle PSX HW (GPLv2)  ·  libounce + OunceVK (%s)  ·  salida %dx%d",
                        video_.isVulkan() ? "Vulkan" : "OpenGL", video_.screenW(), video_.screenH());
     ImGui::TextColored(C_MUTED, "Pantalla: %s", video_.refreshStatus());
     ImGui::Dummy(ImVec2(0, 6 * scale_));

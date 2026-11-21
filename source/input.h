@@ -20,8 +20,10 @@ public:
     void rumble(unsigned port, bool strong, uint16_t strength);
 
     // Para el menú
-    u64 down(int port = 0) const { return padGetButtonsDown(&pads_[port]); }
-    u64 held(int port = 0) const { return padGetButtons(&pads_[port]); }
+    // Incluyen el stick izquierdo como dirección (bits StickL*), calculado aquí con zona muerta propia:
+    // en Switch 2 no conviene depender de que el sistema rellene esos bits.
+    u64 down(int port = 0) const { return padGetButtonsDown(&pads_[port]) | stickDown_[port]; }
+    u64 held(int port = 0) const { return padGetButtons(&pads_[port]) | stickHeld_[port]; }
     HidAnalogStickState stick(int port, int s) const { return padGetStickPos(&pads_[port], s); }
 
 private:
@@ -37,6 +39,9 @@ private:
     unsigned buttonLogs_ = 0, probeLogs_ = 0;
     u64 lastProbe_ = 0;
     void probeRaw();
+    void updateStickDirs(int port);
+    u64 stickHeld_[2] = {}, stickDown_[2] = {};
+    unsigned stickLogs_ = 0;
     HidVibrationDeviceHandle vib_[2][2];
     float vibLo_[2] = {}, vibHi_[2] = {};
 };

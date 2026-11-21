@@ -174,10 +174,16 @@ Config::Config() {
     // ---------------------------------------------------------------- CONTROLES
     {"pad1_type", "Mando jugador 1", C_INPUT, nullptr,
         {{"Mando digital (todos los juegos)", "digital"}, {"DualShock (analógico)", "dualshock"}}, 0,
-        "Digital funciona con todos los juegos. DualShock añade sticks y vibración, pero algunos juegos "
-        "antiguos (p. ej. Castlevania SOTN) ignoran el mando si está en modo analógico.", true},
+        "Digital funciona con todos los juegos y el stick izquierdo hace de cruceta. DualShock añade los dos "
+        "sticks analógicos y vibración (Ape Escape, Spyro, Gran Turismo...), pero algunos juegos antiguos "
+        "ignoran el mando en modo analógico.", true},
     {"pad2_type", "Mando jugador 2", C_INPUT, nullptr,
         {{"Mando digital", "digital"}, {"DualShock (analógico)", "dualshock"}, {"Ninguno", "none"}}, 0, "", true},
+    {"stick_dpad", "Stick izquierdo como cruceta", C_INPUT, nullptr,
+        {{"Automático (con mando Digital)", "auto"}, {"Siempre", "on"}, {"Nunca", "off"}}, 0,
+        "Automático: con el mando Digital el stick izquierdo mueve como la cruceta; con DualShock el juego "
+        "recibe el stick analógico de verdad. Siempre: también con DualShock (útil en juegos que solo usan la "
+        "cruceta en los menús).", false},
     {"analog_toggle", "Botón ANALOG (L3+R3+Start)", C_INPUT, "beetle_psx_hw_analog_toggle", OFFON, 0, "", false},
     {"rumble", "Vibración", C_INPUT, nullptr, ONOFF, 0, "", false},
     {"face_layout", "Distribución de botones", C_INPUT, nullptr,
